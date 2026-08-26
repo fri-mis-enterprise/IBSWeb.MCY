@@ -45,7 +45,7 @@
       - '--set-env-vars'
       - 'ASPNETCORE_ENVIRONMENT=Production'
       - '--set-secrets'
-      - 'ConnectionStrings__SyvillConnection=SyvillConnection:latest'
+      - 'ConnectionStrings__SyvillConnection=SyvillConnection:latest,Calendarific__ApiKey=CalendarificApiKey:latest'
       - '--set-cloudsql-instances'
       - 'integrated-business-system:us-central1:ibs-instance'
       - '--quiet'
