@@ -18,7 +18,7 @@
     {
         <li class="nav-item dropdown">
             <a id="manage" class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Manage your account">
-                @(string.IsNullOrEmpty(company) ? "Account" : company.ToUpper()) @stationCode?.ToUpper()
+                @(string.IsNullOrEmpty(company) ? "Account" : "SYVILL")
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li><a class="dropdown-item" asp-area="Identity" asp-page="/Account/Manage/ChangePassword">Change password</a></li>

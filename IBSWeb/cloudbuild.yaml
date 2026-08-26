@@ -1,64 +1,65 @@
 ﻿steps:
   - name: gcr.io/cloud-builders/docker
     args:
-        - build
-        - '-t'
-        - '$_AR_HOSTNAME/$PROJECT_ID/$_SERVICE_NAME/filpride/$_SERVICE_NAME:$COMMIT_SHA'
-        - '-f'
-        - 'IBSWeb/Dockerfile'
-        - .
+      - build
+      - '-t'
+      - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPOSITORY/syvill/$_SERVICE_NAME:$COMMIT_SHA'
+      - '-f'
+      - 'IBSWeb/Dockerfile'
+      - .
 
   - name: gcr.io/cloud-builders/docker
     args:
-        - push
-        - '$_AR_HOSTNAME/$PROJECT_ID/$_SERVICE_NAME/filpride/$_SERVICE_NAME:$COMMIT_SHA'
+      - push
+      - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPOSITORY/syvill/$_SERVICE_NAME:$COMMIT_SHA'
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
-        - run
-        - deploy
-        - $_SERVICE_NAME
-        - '--image'
-        - '$_AR_HOSTNAME/$PROJECT_ID/$_SERVICE_NAME/filpride/$_SERVICE_NAME:$COMMIT_SHA'
-        - '--region'
-        - $_DEPLOY_REGION
-        - '--platform'
-        - $_PLATFORM
-        - '--labels'
-        - 'company=filpride'
-        - '--cpu'
-        - '1'
-        - '--memory'
-        - '2Gi'
-        - '--concurrency'
-        - '20'
-        - '--timeout'
-        - '300'
-        - '--max-instances'
-        - '20'
-        - '--min-instances'
-        - '0'
-        - '--cpu-throttling'
-        - '--execution-environment'
-        - 'gen2'
-        - '--set-env-vars'
-        - 'ASPNETCORE_ENVIRONMENT=Production'
-        - '--set-secrets'
-        - 'ConnectionStrings__DefaultConnection=DefaultConnection:latest,Calendarific__ApiKey=CalendarificApiKey:latest'
-        - '--set-cloudsql-instances'
-        - 'integrated-business-system:us-central1:ibs-instance'
-        - '--quiet'
+      - run
+      - deploy
+      - $_SERVICE_NAME
+      - '--image'
+      - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPOSITORY/syvill/$_SERVICE_NAME:$COMMIT_SHA'
+      - '--region'
+      - $_DEPLOY_REGION
+      - '--platform'
+      - $_PLATFORM
+      - '--labels'
+      - 'company=syvill'
+      - '--cpu'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--concurrency'
+      - '20'
+      - '--timeout'
+      - '300'
+      - '--max-instances'
+      - '20'
+      - '--min-instances'
+      - '0'
+      - '--cpu-throttling'
+      - '--execution-environment'
+      - 'gen2'
+      - '--set-env-vars'
+      - 'ASPNETCORE_ENVIRONMENT=Production'
+      - '--set-secrets'
+      - 'ConnectionStrings__SyvillConnection=SyvillConnection:latest'
+      - '--set-cloudsql-instances'
+      - 'integrated-business-system:us-central1:ibs-instance'
+      - '--quiet'
 
 timeout: 1200s
 
 images:
-  - '$_AR_HOSTNAME/$PROJECT_ID/$_SERVICE_NAME/filpride/$_SERVICE_NAME:$COMMIT_SHA'
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPOSITORY/syvill/$_SERVICE_NAME:$COMMIT_SHA'
 
 substitutions:
   _AR_HOSTNAME: us-central1-docker.pkg.dev
+  _AR_REPOSITORY: ibsweb
   _DEPLOY_REGION: us-central1
-  _SERVICE_NAME: ibsweb
+  _SERVICE_NAME: syvill-ibsweb
   _PLATFORM: managed
 
 options:
