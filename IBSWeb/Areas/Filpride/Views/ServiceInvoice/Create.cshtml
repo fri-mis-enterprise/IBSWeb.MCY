@@ -24,6 +24,20 @@
             @Html.AntiForgeryToken()
             <div asp-validation-summary="ModelOnly" class="text-danger"></div>
             <div class="form-group mb-3">
+                <label class="control-label d-block">Setup Mode<span class="required">*</span></label>
+                <div class="form-check form-check-inline">
+                    <input asp-for="CreationMode" class="form-check-input" type="radio"
+                           value="@ServiceInvoiceCreationMode.Manual" id="creationModeManual">
+                    <label class="form-check-label" for="creationModeManual">Manual</label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input asp-for="CreationMode" class="form-check-input" type="radio"
+                           value="@ServiceInvoiceCreationMode.Automatic" id="creationModeAutomatic">
+                    <label class="form-check-label" for="creationModeAutomatic">Automatic</label>
+                </div>
+                <span asp-validation-for="CreationMode" class="text-danger"></span>
+            </div>
+            <div class="form-group mb-3">
                 <label class="control-label">Type<span class="required">*</span></label>
                 <select asp-for="Type" class="form-select js-select2 border-0 shadow" style="width:100%; max-height: 200px;" required>
                     <option value="" selected disabled>Select SI type</option>
@@ -58,12 +72,12 @@
                 </select>
                 <span asp-validation-for="DeliveryReceiptId" class="text-danger"></span>
             </div>
-            <div class="form-group mb-3">
+            <div id="manual-due-date" class="form-group mb-3">
                 <label asp-for="DueDate" class="control-label">Due Date<span class="required">*</span></label>
                 <input asp-for="DueDate" type="date" class="form-control" value=""/>
                 <span asp-validation-for="DueDate" class="text-danger"></span>
             </div>
-            <div class="form-floating mb-3">
+            <div id="manual-discount" class="form-floating mb-3">
                 <input asp-for="Discount" class="form-control moneyInput" placeholder="0.0000"/>
                 <label asp-for="Discount" class="control-label">Discount</label>
                 <span asp-validation-for="Discount" class="text-danger"></span>
@@ -73,16 +87,35 @@
                 <label for="instructions" class="control-label">Instructions</label>
                 <span asp-validation-for="Instructions" class="text-danger"></span>
             </div>
-            <div id="period-amount-fields" class="row g-2 mb-3">
+            <div class="row g-2 mb-3">
                 <div class="col-sm mb-3">
-                    <label asp-for="Period" class="control-label">Period<span class="required">*</span></label>
+                    <label asp-for="Period" id="periodLabel" class="control-label">Period<span class="required">*</span></label>
                     <input asp-for="Period" type="month" value="@DateTimeHelper.GetCurrentPhilippineTime().ToString("yyyy-MM")" class="form-control"/>
                     <span asp-validation-for="Period" class="text-danger"></span>
                 </div>
+            </div>
+            <div id="manual-total" class="row g-2 mb-3">
                 <div class="col-sm mb-3">
                     <label asp-for="Total" class="control-label">Total<span class="required">*</span></label>
                     <input asp-for="Total" class="form-control money" placeholder="0.00"/>
                     <span asp-validation-for="Total" class="text-danger"></span>
+                </div>
+            </div>
+            <div id="automatic-fields" style="display: none;">
+                <div class="row g-2 mb-3">
+                    <div class="col-sm mb-3">
+                        <label asp-for="DurationInMonths" class="control-label">How Many Months<span class="required">*</span></label>
+                        <input asp-for="DurationInMonths" type="number" min="1" class="form-control"/>
+                        <span asp-validation-for="DurationInMonths" class="text-danger"></span>
+                    </div>
+                    <div class="col-sm mb-3">
+                        <label asp-for="AmountPerMonth" class="control-label">Amount Per Month<span class="required">*</span></label>
+                        <input asp-for="AmountPerMonth" class="form-control money" placeholder="0.00"/>
+                        <span asp-validation-for="AmountPerMonth" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="alert alert-info mb-3">
+                    The first invoice is created immediately. Remaining invoices are generated monthly, with a due date on the last day of each period.
                 </div>
             </div>
 
@@ -109,11 +142,48 @@
             const $customerSelect = $('select[name="CustomerId"]');
             const $drSelect = $('select[name="DeliveryReceiptId"]');
             const $drFormGroup = $('#drDiv');
+            const $creationModeInputs = $('input[name="CreationMode"]');
+            const $automaticFields = $('#automatic-fields');
+            const $periodLabel = $('#periodLabel');
             const $totalField = $('input[name="Total"]');
-
+            const $dueDateField = $('input[name="DueDate"]');
+            const $discountField = $('input[name="Discount"]');
+            const $durationField = $('input[name="DurationInMonths"]');
+            const $amountPerMonthField = $('input[name="AmountPerMonth"]');
             let drTotalMap = {}; // Map DR ID to its gross total
 
+            function isAutomaticMode() {
+                return $creationModeInputs.filter(':checked').val() === '@ServiceInvoiceCreationMode.Automatic';
+            }
+
+            function toggleModeFields() {
+                const selectedMode = $creationModeInputs.filter(':checked').val();
+                const automaticMode = isAutomaticMode();
+
+                $('#manual-due-date, #manual-discount, #manual-total').toggle(selectedMode && !automaticMode);
+                $automaticFields.toggle(selectedMode && automaticMode);
+                $periodLabel.html((automaticMode ? 'Starting Period' : 'Period') + '<span class="required">*</span>');
+                $dueDateField.prop('disabled', !selectedMode || automaticMode);
+                $discountField.prop('disabled', !selectedMode || automaticMode);
+                $totalField.prop('disabled', !selectedMode || automaticMode);
+                $durationField.prop('disabled', !selectedMode || !automaticMode);
+                $amountPerMonthField.prop('disabled', !selectedMode || !automaticMode);
+
+                if (automaticMode) {
+                    $drFormGroup.hide();
+                    $drSelect.empty().append(new Option(''));
+                    return;
+                }
+                if (selectedMode && $serviceSelect.val()) {
+                    fetchDRs();
+                }
+            }
             function fetchDRs() {
+                if ($creationModeInputs.filter(':checked').val() !== '@ServiceInvoiceCreationMode.Manual') {
+                    $drFormGroup.hide();
+                    $drSelect.empty().append(new Option(''));
+                    return;
+                }
                 const serviceText = $serviceSelect.find('option:selected').text().trim().toUpperCase();
                 const customerId = $customerSelect.val();
 
@@ -172,7 +242,9 @@
                 if ($serviceSelect.val()) fetchDRs();
             });
             $drSelect.on("change", calculateTotal);
+            $creationModeInputs.on("change", toggleModeFields);
 
+            toggleModeFields();
             fetchDRs(); // On load
         });
     </script>

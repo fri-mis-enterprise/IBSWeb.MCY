@@ -46,6 +46,11 @@ namespace IBS.Models.Filpride.AccountsReceivable
         [ForeignKey(nameof(ServiceId))]
         public FilprideService? Service { get; set; }
 
+        public int? RecurringServiceInvoiceId { get; set; }
+
+        [ForeignKey(nameof(RecurringServiceInvoiceId))]
+        public FilprideRecurringServiceInvoice? RecurringServiceInvoice { get; set; }
+
         [StringLength(100)]
         public string ServiceName { get; set; } = string.Empty;
 

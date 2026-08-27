@@ -7,6 +7,7 @@ using IBS.Models.Filpride.Books;
 using IBS.Models.Filpride.Integrated;
 using IBS.Models.Filpride.ViewModels;
 using IBS.Services.Attributes;
+using IBS.Services;
 using IBS.Utility.Constants;
 using IBS.Utility.Helpers;
 using Microsoft.AspNetCore.Authorization;
@@ -31,12 +32,17 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
         private readonly ILogger<ServiceInvoiceController> _logger;
 
-        public ServiceInvoiceController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, IUnitOfWork unitOfWork, ILogger<ServiceInvoiceController> logger)
+        private readonly IServiceInvoiceGenerationService _serviceInvoiceGenerationService;
+
+        public ServiceInvoiceController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager,
+            IUnitOfWork unitOfWork, ILogger<ServiceInvoiceController> logger,
+            IServiceInvoiceGenerationService serviceInvoiceGenerationService)
         {
             _dbContext = dbContext;
             _userManager = userManager;
             _unitOfWork = unitOfWork;
             _logger = logger;
+            _serviceInvoiceGenerationService = serviceInvoiceGenerationService;
         }
 
         private string GetUserFullName()
@@ -167,7 +173,23 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     draw = parameters.Draw,
                     recordsTotal = totalRecords,
                     recordsFiltered = totalFilteredRecords,
-                    data = pagedData
+                    data = pagedData.Select(invoice => new
+                    {
+                        invoice.ServiceInvoiceId,
+                        invoice.ServiceInvoiceNo,
+                        invoice.Customer,
+                        invoice.Service,
+                        invoice.Period,
+                        invoice.Total,
+                        invoice.CreatedBy,
+                        invoice.Status,
+                        invoice.PostedBy,
+                        invoice.VoidedBy,
+                        invoice.CanceledBy,
+                        invoice.AmountPaid,
+                        invoice.PaymentStatus,
+                        hasRecurringSetup = invoice.RecurringServiceInvoiceId != null
+                    })
                 });
             }
             catch (Exception ex)
@@ -214,59 +236,89 @@ namespace IBSWeb.Areas.Filpride.Controllers
             viewModel.Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(companyClaims, cancellationToken);
             viewModel.Services = await _unitOfWork.GetFilprideServiceListById(companyClaims, cancellationToken);
 
+            if (viewModel.CreationMode == null)
+            {
+                ModelState.AddModelError(nameof(viewModel.CreationMode), "Please choose manual or automatic setup.");
+            }
+
             if (!ModelState.IsValid)
             {
                 TempData["warning"] = "The submitted information is invalid.";
                 return View(viewModel);
             }
 
+            if (viewModel.CreationMode == ServiceInvoiceCreationMode.Automatic)
+            {
+                var service = await _unitOfWork.FilprideService.GetAsync(
+                    service => service.ServiceId == viewModel.ServiceId && service.Company == companyClaims,
+                    cancellationToken);
+
+                if (service?.Name == "TRANSACTION FEE")
+                {
+                    ModelState.AddModelError(nameof(viewModel.ServiceId),
+                        "Transaction Fee service invoices require a delivery receipt and cannot be recurring.");
+                    return View(viewModel);
+                }
+            }
+
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
             try
             {
-                #region --Retrieval of Customer/Service
+                var currentUser = GetUserFullName();
+                FilprideServiceInvoice model;
 
-                var customer = await _unitOfWork.FilprideCustomer
-                    .GetAsync(c => c.CustomerId == viewModel.CustomerId, cancellationToken);
-
-                var service = await _unitOfWork.FilprideService
-                    .GetAsync(c => c.ServiceId == viewModel.ServiceId, cancellationToken);
-
-                if (customer == null || service == null)
+                if (viewModel.CreationMode == ServiceInvoiceCreationMode.Automatic)
                 {
-                    return NotFound();
+                    var recurringSetup = BuildRecurringSetup(viewModel, companyClaims);
+                    await _dbContext.FilprideRecurringServiceInvoices.AddAsync(recurringSetup, cancellationToken);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                    model = await _serviceInvoiceGenerationService.CreateAsync(new ServiceInvoiceGenerationRequest
+                    {
+                        Company = companyClaims,
+                        Type = viewModel.Type,
+                        CustomerId = viewModel.CustomerId,
+                        ServiceId = viewModel.ServiceId,
+                        Period = recurringSetup.StartPeriod,
+                        DueDate = GetPeriodEndDate(recurringSetup.StartPeriod),
+                        Instructions = viewModel.Instructions,
+                        Total = viewModel.AmountPerMonth,
+                        Discount = 0,
+                        CreatedBy = currentUser,
+                        RecurringServiceInvoiceId = recurringSetup.RecurringServiceInvoiceId
+                    }, cancellationToken);
+
+                    recurringSetup.GeneratedCount = 1;
+                    recurringSetup.IsActive = recurringSetup.GeneratedCount < recurringSetup.DurationInMonths;
+                    recurringSetup.NextRunPeriod = recurringSetup.IsActive
+                        ? recurringSetup.StartPeriod.AddMonths(recurringSetup.GeneratedCount)
+                        : null;
+
+                    await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail(currentUser,
+                        $"Created recurring service invoice setup# {recurringSetup.RecurringServiceInvoiceId}",
+                        "Service Invoice", companyClaims), cancellationToken);
                 }
-
-                #endregion --Retrieval of Customer/Service
-
-                var model = new FilprideServiceInvoice
+                else
                 {
-                    ServiceInvoiceNo = await _unitOfWork.FilprideServiceInvoice.GenerateCodeAsync(companyClaims, viewModel.Type, cancellationToken),
-                    ServiceId = service.ServiceId,
-                    ServiceName = service.Name,
-                    ServicePercent = service.Percent,
-                    CustomerId = customer.CustomerId,
-                    CustomerName = customer.CustomerName,
-                    CustomerAddress = customer.CustomerAddress,
-                    CustomerBusinessStyle = customer.BusinessStyle,
-                    CustomerTin = customer.CustomerTin,
-                    VatType = service.Name != "TRANSACTION FEE" ? customer.VatType : SD.VatType_Exempt,
-                    HasEwt = customer.WithHoldingTax && service.Name != "TRANSACTION FEE",
-                    HasWvat = customer.WithHoldingVat && service.Name != "TRANSACTION FEE",
-                    CreatedBy = GetUserFullName(),
-                    Total = viewModel.Total,
-                    Balance = viewModel.Total,
-                    Company = companyClaims,
-                    Period = viewModel.Period,
-                    Instructions = viewModel.Instructions,
-                    DueDate = viewModel.DueDate,
-                    Discount = viewModel.Discount,
-                    Type = viewModel.Type,
-                };
+                    model = await _serviceInvoiceGenerationService.CreateAsync(new ServiceInvoiceGenerationRequest
+                    {
+                        Company = companyClaims,
+                        Type = viewModel.Type,
+                        CustomerId = viewModel.CustomerId,
+                        ServiceId = viewModel.ServiceId,
+                        Period = NormalizePeriod(viewModel.Period),
+                        DueDate = viewModel.DueDate,
+                        Instructions = viewModel.Instructions,
+                        Total = viewModel.Total,
+                        Discount = viewModel.Discount,
+                        CreatedBy = currentUser
+                    }, cancellationToken);
+                }
 
                 #region --Additional procedure for Transaction Fee
 
-                if (viewModel.DeliveryReceiptId != null)
+                if (viewModel.CreationMode == ServiceInvoiceCreationMode.Manual && viewModel.DeliveryReceiptId != null)
                 {
                     var deliveryReceipt = await _unitOfWork.FilprideDeliveryReceipt
                         .GetAsync(x => x.DeliveryReceiptId == viewModel.DeliveryReceiptId, cancellationToken);
@@ -284,8 +336,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 #endregion --Additional procedure for Transaction Fee
 
-                await _unitOfWork.FilprideServiceInvoice.AddAsync(model, cancellationToken);
-
                 #region --Audit Trail Recording
 
                 FilprideAuditTrail auditTrailBook = new(model.CreatedBy!, $"Created new service invoice# {model.ServiceInvoiceNo}", "Service Invoice", model.Company);
@@ -293,7 +343,9 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 #endregion --Audit Trail Recording
 
-                TempData["success"] = $"Service invoice #{model.ServiceInvoiceNo} created successfully.";
+                TempData["success"] = viewModel.CreationMode == ServiceInvoiceCreationMode.Automatic
+                    ? $"Recurring setup saved. Service invoice #{model.ServiceInvoiceNo} created successfully."
+                    : $"Service invoice #{model.ServiceInvoiceNo} created successfully.";
                 await _unitOfWork.SaveAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return RedirectToAction(nameof(Index));
@@ -406,6 +458,28 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 model.CanceledDate = DateTimeHelper.GetCurrentPhilippineTime();
                 model.Status = nameof(Status.Canceled);
                 model.CancellationRemarks = cancellationRemarks;
+
+                if (model.RecurringServiceInvoiceId.HasValue)
+                {
+                    var recurringSetup = await _dbContext.FilprideRecurringServiceInvoices
+                        .FirstOrDefaultAsync(setup =>
+                                setup.RecurringServiceInvoiceId == model.RecurringServiceInvoiceId.Value &&
+                                setup.Company == model.Company,
+                            cancellationToken);
+
+                    if (recurringSetup?.IsActive == true)
+                    {
+                        recurringSetup.IsActive = false;
+                        recurringSetup.NextRunPeriod = null;
+                        recurringSetup.CanceledBy = model.CanceledBy;
+                        recurringSetup.CanceledDate = model.CanceledDate;
+                        recurringSetup.CancellationRemarks = cancellationRemarks;
+
+                        await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail(model.CanceledBy!,
+                            $"Canceled recurring service invoice setup# {recurringSetup.RecurringServiceInvoiceId}",
+                            "Service Invoice", model.Company), cancellationToken);
+                    }
+                }
 
                 if (model.DeliveryReceiptId != null)
                 {
@@ -1140,6 +1214,37 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 TempData["error"] = ex.Message;
                 return RedirectToAction(nameof(Index));
             }
+        }
+
+        private FilprideRecurringServiceInvoice BuildRecurringSetup(ServiceInvoiceViewModel viewModel,
+            string company)
+        {
+            var startPeriod = NormalizePeriod(viewModel.Period);
+
+            return new FilprideRecurringServiceInvoice
+            {
+                Type = viewModel.Type,
+                Company = company,
+                CustomerId = viewModel.CustomerId,
+                ServiceId = viewModel.ServiceId,
+                Instructions = viewModel.Instructions,
+                StartPeriod = startPeriod,
+                EndPeriod = startPeriod.AddMonths(viewModel.DurationInMonths - 1),
+                DurationInMonths = viewModel.DurationInMonths,
+                AmountPerMonth = viewModel.AmountPerMonth,
+                CreatedBy = GetUserFullName(),
+                CreatedDate = DateTimeHelper.GetCurrentPhilippineTime()
+            };
+        }
+
+        private static DateOnly NormalizePeriod(DateOnly period)
+        {
+            return new DateOnly(period.Year, period.Month, 1);
+        }
+
+        private static DateOnly GetPeriodEndDate(DateOnly period)
+        {
+            return NormalizePeriod(period).AddMonths(1).AddDays(-1);
         }
     }
 }

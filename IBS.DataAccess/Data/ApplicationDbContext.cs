@@ -108,6 +108,7 @@ namespace IBS.DataAccess.Data
         public DbSet<FilprideDebitMemo> FilprideDebitMemos { get; set; }
         public DbSet<FilprideSalesInvoice> FilprideSalesInvoices { get; set; }
         public DbSet<FilprideServiceInvoice> FilprideServiceInvoices { get; set; }
+        public DbSet<FilprideRecurringServiceInvoice> FilprideRecurringServiceInvoices { get; set; }
         public DbSet<FilprideOffsettings> FilprideOffsettings { get; set; }
         public DbSet<FilprideCollectionReceiptDetail> FilprideCollectionReceiptDetails { get; set; }
         #endregion
@@ -430,6 +431,11 @@ namespace IBS.DataAccess.Data
 
             builder.Entity<FilprideServiceInvoice>(sv =>
             {
+                sv.HasOne(sv => sv.RecurringServiceInvoice)
+                    .WithMany()
+                    .HasForeignKey(sv => sv.RecurringServiceInvoiceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
                 sv.HasOne(sv => sv.Customer)
                 .WithMany()
                 .HasForeignKey(sv => sv.CustomerId)
@@ -451,9 +457,38 @@ namespace IBS.DataAccess.Data
                     sv.Company
                 })
                 .IsUnique();
+
+                sv.HasIndex(sv => new
+                {
+                    sv.RecurringServiceInvoiceId,
+                    sv.Period
+                });
             });
 
             #endregion -- Service Invoice --
+
+            #region -- Recurring Service Invoice --
+
+            builder.Entity<FilprideRecurringServiceInvoice>(rsi =>
+            {
+                rsi.HasOne(rsi => rsi.Customer)
+                    .WithMany()
+                    .HasForeignKey(rsi => rsi.CustomerId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                rsi.HasOne(rsi => rsi.Service)
+                    .WithMany()
+                    .HasForeignKey(rsi => rsi.ServiceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                rsi.HasIndex(rsi => new
+                {
+                    rsi.IsActive,
+                    rsi.NextRunPeriod
+                });
+            });
+
+            #endregion -- Recurring Service Invoice --
 
             #region -- Collection Receipt --
 

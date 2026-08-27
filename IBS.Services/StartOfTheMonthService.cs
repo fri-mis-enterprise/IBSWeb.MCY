@@ -2,6 +2,7 @@ using IBS.DataAccess.Data;
 using IBS.DataAccess.Repository.IRepository;
 using IBS.Models.Enums;
 using IBS.Models.Filpride.AccountsPayable;
+using IBS.Models.Filpride.AccountsReceivable;
 using IBS.Models.Filpride.Books;
 using IBS.Utility.Constants;
 using IBS.Utility.Helpers;
@@ -20,12 +21,16 @@ namespace IBS.Services
 
         private readonly ApplicationDbContext _dbContext;
 
+        private readonly IServiceInvoiceGenerationService _serviceInvoiceGenerationService;
+
         public StartOfTheMonthService(IUnitOfWork unitOfWork,
-            ILogger<StartOfTheMonthService> logger, ApplicationDbContext dbContext)
+            ILogger<StartOfTheMonthService> logger, ApplicationDbContext dbContext,
+            IServiceInvoiceGenerationService serviceInvoiceGenerationService)
         {
             _unitOfWork = unitOfWork;
             _logger = logger;
             _dbContext = dbContext;
+            _serviceInvoiceGenerationService = serviceInvoiceGenerationService;
         }
 
         public async Task Execute(IJobExecutionContext context)
@@ -39,6 +44,7 @@ namespace IBS.Services
 
                 await GetTheUnliftedDrs(previousMonthDate);
                 await ProcessAmortization(today);
+                await ProcessRecurringServiceInvoices(new DateOnly(today.Year, today.Month, 1));
                 await SendNotificationToManagementAccounting(previousMonthDate);
                 await SendNotificationToCNC(previousMonthDate);
                 await ReverseTheJvEntries();
@@ -84,6 +90,105 @@ namespace IBS.Services
                 _logger.LogError(ex, "Error while getting the unlifted DRs for {Date}", previousMonthDate);
                 throw;
             }
+        }
+
+        private async Task ProcessRecurringServiceInvoices(DateOnly currentPeriod)
+        {
+            try
+            {
+                var recurringInvoices = await _dbContext.FilprideRecurringServiceInvoices
+                    .Where(invoice => invoice.IsActive &&
+                                      invoice.NextRunPeriod != null &&
+                                      invoice.NextRunPeriod <= currentPeriod)
+                    .OrderBy(invoice => invoice.NextRunPeriod)
+                    .ToListAsync();
+
+                if (recurringInvoices.Count == 0)
+                {
+                    return;
+                }
+
+                var recurringInvoiceIds = recurringInvoices
+                    .Select(invoice => invoice.RecurringServiceInvoiceId)
+                    .ToList();
+                var generatedInvoicePeriods = (await _dbContext.FilprideServiceInvoices
+                        .Where(invoice => invoice.RecurringServiceInvoiceId.HasValue &&
+                                          recurringInvoiceIds.Contains(invoice.RecurringServiceInvoiceId.Value) &&
+                                          invoice.Period <= currentPeriod &&
+                                          invoice.Status != nameof(Status.Voided))
+                        .Select(invoice => new
+                        {
+                            invoice.RecurringServiceInvoiceId,
+                            invoice.Period
+                        })
+                        .ToListAsync())
+                    .Select(invoice => (invoice.RecurringServiceInvoiceId!.Value, invoice.Period))
+                    .ToHashSet();
+
+                foreach (var recurringInvoice in recurringInvoices)
+                {
+                    while (recurringInvoice.IsActive &&
+                           recurringInvoice.NextRunPeriod != null &&
+                           recurringInvoice.NextRunPeriod <= currentPeriod)
+                    {
+                        var invoicePeriod = NormalizePeriod(recurringInvoice.NextRunPeriod.Value);
+
+                        if (generatedInvoicePeriods.Add((recurringInvoice.RecurringServiceInvoiceId, invoicePeriod)))
+                        {
+                            var generatedInvoice = await _serviceInvoiceGenerationService.CreateAsync(
+                                new ServiceInvoiceGenerationRequest
+                                {
+                                    Company = recurringInvoice.Company,
+                                    Type = recurringInvoice.Type,
+                                    CustomerId = recurringInvoice.CustomerId,
+                                    ServiceId = recurringInvoice.ServiceId,
+                                    Period = invoicePeriod,
+                                    DueDate = GetPeriodEndDate(invoicePeriod),
+                                    Instructions = recurringInvoice.Instructions,
+                                    Total = recurringInvoice.AmountPerMonth,
+                                    Discount = 0,
+                                    CreatedBy = "SYSTEM",
+                                    RecurringServiceInvoiceId = recurringInvoice.RecurringServiceInvoiceId
+                                });
+
+                            await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail("SYSTEM",
+                                $"Generated service invoice# {generatedInvoice.ServiceInvoiceNo} from recurring setup# {recurringInvoice.RecurringServiceInvoiceId}",
+                                "Service Invoice", recurringInvoice.Company));
+                        }
+
+                        recurringInvoice.GeneratedCount = Math.Max(recurringInvoice.GeneratedCount,
+                            GetSequenceNumber(recurringInvoice, invoicePeriod));
+                        recurringInvoice.IsActive = recurringInvoice.GeneratedCount < recurringInvoice.DurationInMonths;
+                        recurringInvoice.NextRunPeriod = recurringInvoice.IsActive
+                            ? recurringInvoice.StartPeriod.AddMonths(recurringInvoice.GeneratedCount)
+                            : null;
+                    }
+                }
+
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while processing recurring service invoices for {Period}", currentPeriod);
+                throw;
+            }
+        }
+
+        private static int GetSequenceNumber(FilprideRecurringServiceInvoice recurringInvoice,
+            DateOnly invoicePeriod)
+        {
+            return ((invoicePeriod.Year - recurringInvoice.StartPeriod.Year) * 12) +
+                   invoicePeriod.Month - recurringInvoice.StartPeriod.Month + 1;
+        }
+
+        private static DateOnly NormalizePeriod(DateOnly period)
+        {
+            return new DateOnly(period.Year, period.Month, 1);
+        }
+
+        private static DateOnly GetPeriodEndDate(DateOnly period)
+        {
+            return NormalizePeriod(period).AddMonths(1).AddDays(-1);
         }
 
         private async Task ProcessAmortization(DateOnly dateToday)
