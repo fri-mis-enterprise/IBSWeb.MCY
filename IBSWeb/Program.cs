@@ -50,7 +50,7 @@ builder.Services.AddAuthorization(options =>
 
 // DBContext (scoped)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("SyvillConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("MCYConnection")));
 
 // Identity
 builder.Services.AddDefaultIdentity<ApplicationUser>()
