@@ -148,7 +148,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -505,7 +505,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {

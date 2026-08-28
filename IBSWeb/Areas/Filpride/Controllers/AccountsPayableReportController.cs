@@ -222,7 +222,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -1079,7 +1079,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -1402,7 +1402,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -2400,7 +2400,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -3571,7 +3571,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                         #region -- Header
 
-                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                        var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
                         page.Header().Height(50).Row(row =>
                         {
@@ -5428,7 +5428,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 worksheet.Cells.Style.Font.Name = "Calibri";
 
                 // inserting filpride image
-                var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+                var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
                 var pic = await worksheet.Drawings.AddPictureAsync("Landscape", new FileInfo(imgFilprideLogoPath));
                 pic.SetSize(120, 50);
                 pic.SetPosition(2, 0, 2, 0);

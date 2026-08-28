@@ -153,7 +153,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
             DateOnly monthDate,
             bool isCombinedReport)
         {
-            var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "Filpride-logo.png");
+            var imgFilprideLogoPath = Path.Combine(_webHostEnvironment.WebRootPath, "img", "mcy.png");
 
             return Document.Create(container =>
             {
