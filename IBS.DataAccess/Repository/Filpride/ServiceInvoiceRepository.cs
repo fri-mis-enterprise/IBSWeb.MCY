@@ -19,17 +19,17 @@ namespace IBS.DataAccess.Repository.Filpride
             _db = db;
         }
 
-        public async Task<string> GenerateCodeAsync(string company, string type, CancellationToken cancellationToken = default)
+        public async Task<string> GenerateCodeAsync(string type, CancellationToken cancellationToken = default)
         {
             return type switch
             {
-                nameof(DocumentType.Documented) => await GenerateCodeForDocumented(company, cancellationToken),
-                nameof(DocumentType.Undocumented) => await GenerateCodeForUnDocumented(company, cancellationToken),
+                nameof(DocumentType.Documented) => await GenerateCodeForDocumented(cancellationToken),
+                nameof(DocumentType.Undocumented) => await GenerateCodeForUnDocumented(cancellationToken),
                 _ => throw new ArgumentException("Invalid type")
             };
         }
 
-        private async Task<string> GenerateCodeForDocumented(string company, CancellationToken cancellationToken)
+        private async Task<string> GenerateCodeForDocumented(CancellationToken cancellationToken)
         {
             var lastSv = await _db
                 .FilprideServiceInvoices
@@ -37,7 +37,7 @@ namespace IBS.DataAccess.Repository.Filpride
                 .OrderByDescending(x => x.ServiceInvoiceNo!.Length)
                 .ThenByDescending(x => x.ServiceInvoiceNo)
                 .FirstOrDefaultAsync(x =>
-                    x.Company == company &&
+
                     x.Type == nameof(DocumentType.Documented),
                     cancellationToken);
 
@@ -53,7 +53,7 @@ namespace IBS.DataAccess.Repository.Filpride
             return lastSeries.Substring(0, 2) + incrementedNumber.ToString("D10");
         }
 
-        private async Task<string> GenerateCodeForUnDocumented(string company, CancellationToken cancellationToken)
+        private async Task<string> GenerateCodeForUnDocumented(CancellationToken cancellationToken)
         {
             var lastSv = await _db
                 .FilprideServiceInvoices
@@ -61,7 +61,7 @@ namespace IBS.DataAccess.Repository.Filpride
                 .OrderByDescending(x => x.ServiceInvoiceNo!.Length)
                 .ThenByDescending(x => x.ServiceInvoiceNo)
                 .FirstOrDefaultAsync(x =>
-                        x.Company == company &&
+
                         x.Type == nameof(DocumentType.Undocumented),
                     cancellationToken);
 
@@ -173,7 +173,6 @@ namespace IBS.DataAccess.Repository.Filpride
                     AccountTitle = arTradeTitle.AccountName,
                     Debit = model.Total - (withHoldingTaxAmount + withHoldingVatAmount),
                     Credit = 0,
-                    Company = model.Company,
                     CreatedBy = model.PostedBy!,
                     CreatedDate = DateTimeHelper.GetCurrentPhilippineTime(),
                     SubAccountType = SubAccountType.Customer,
@@ -195,7 +194,6 @@ namespace IBS.DataAccess.Repository.Filpride
                         AccountTitle = arTradeCwt.AccountName,
                         Debit = withHoldingTaxAmount,
                         Credit = 0,
-                        Company = model.Company,
                         CreatedBy = model.PostedBy!,
                         CreatedDate = DateTimeHelper.GetCurrentPhilippineTime(),
                         ModuleType = nameof(ModuleType.Sales)
@@ -215,7 +213,6 @@ namespace IBS.DataAccess.Repository.Filpride
                         AccountTitle = arTradeCwv.AccountName,
                         Debit = withHoldingVatAmount,
                         Credit = 0,
-                        Company = model.Company,
                         CreatedBy = model.PostedBy!,
                         CreatedDate = DateTimeHelper.GetCurrentPhilippineTime(),
                         ModuleType = nameof(ModuleType.Sales)
@@ -234,7 +231,6 @@ namespace IBS.DataAccess.Repository.Filpride
                     AccountTitle = servicesTitle.AccountName,
                     Debit = 0,
                     Credit = netOfVatAmount,
-                    Company = model.Company,
                     CreatedBy = model.PostedBy!,
                     CreatedDate = DateTimeHelper.GetCurrentPhilippineTime(),
                     ModuleType = nameof(ModuleType.Sales)
@@ -254,7 +250,6 @@ namespace IBS.DataAccess.Repository.Filpride
                         AccountTitle = vatOutputTitle.AccountName,
                         Debit = 0,
                         Credit = vatAmount,
-                        Company = model.Company,
                         CreatedBy = model.PostedBy!,
                         CreatedDate = DateTimeHelper.GetCurrentPhilippineTime(),
                         ModuleType = nameof(ModuleType.Sales)

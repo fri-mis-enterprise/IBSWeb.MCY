@@ -13,7 +13,6 @@ namespace IBS.Services
 
     public class ServiceInvoiceGenerationRequest
     {
-        public required string Company { get; init; }
         public required string Type { get; init; }
         public int CustomerId { get; init; }
         public int ServiceId { get; init; }
@@ -39,10 +38,10 @@ namespace IBS.Services
             CancellationToken cancellationToken = default)
         {
             var customer = await _unitOfWork.FilprideCustomer.GetAsync(
-                customer => customer.CustomerId == request.CustomerId && customer.Company == request.Company,
+                customer => customer.CustomerId == request.CustomerId,
                 cancellationToken);
             var service = await _unitOfWork.FilprideService.GetAsync(
-                service => service.ServiceId == request.ServiceId && service.Company == request.Company,
+                service => service.ServiceId == request.ServiceId,
                 cancellationToken);
 
             if (customer == null || service == null)
@@ -55,8 +54,7 @@ namespace IBS.Services
 
             var model = new FilprideServiceInvoice
             {
-                ServiceInvoiceNo = await _unitOfWork.FilprideServiceInvoice.GenerateCodeAsync(
-                    request.Company, request.Type, cancellationToken),
+                ServiceInvoiceNo = await _unitOfWork.FilprideServiceInvoice.GenerateCodeAsync(request.Type, cancellationToken),
                 ServiceId = service.ServiceId,
                 ServiceName = service.Name,
                 ServicePercent = service.Percent,
@@ -71,7 +69,6 @@ namespace IBS.Services
                 CreatedBy = request.CreatedBy,
                 Total = request.Total,
                 Balance = request.Total,
-                Company = request.Company,
                 Period = normalizedPeriod,
                 Instructions = request.Instructions,
                 DueDate = request.DueDate,
