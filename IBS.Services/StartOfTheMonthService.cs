@@ -146,11 +146,11 @@ namespace IBS.Services
                                     Instructions = recurringInvoice.Instructions,
                                     Total = recurringInvoice.AmountPerMonth,
                                     Discount = 0,
-                                    CreatedBy = "SYSTEM",
+                                    CreatedBy = "SYSTEM GENERATED",
                                     RecurringServiceInvoiceId = recurringInvoice.RecurringServiceInvoiceId
                                 });
 
-                            await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail("SYSTEM",
+                            await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail("SYSTEM GENERATED",
                                 $"Generated service invoice# {generatedInvoice.ServiceInvoiceNo} from recurring setup# {recurringInvoice.RecurringServiceInvoiceId}",
                                 "Service Invoice"));
                         }
