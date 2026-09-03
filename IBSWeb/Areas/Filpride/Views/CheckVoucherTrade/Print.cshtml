@@ -11,16 +11,16 @@
 
 @{
     ViewData["Title"] = "Check Voucher Trade - Preview";
-    
+
     int supplierId = Model.Supplier?.SupplierId ?? 0;
-    
+
     var selectedCompany = string.Empty;
 
     if (SignInManager.IsSignedIn(User))
     {
         selectedCompany = User.Claims.FirstOrDefault(c => c.Type == "Company")?.Value;
     }
-    
+
     var displayParticulars = !string.IsNullOrWhiteSpace(Model.Header?.Reference)
         ? $"{Model.Header?.Particulars} Advances#{Model.Header?.Reference}"
         : $"{Model.Header?.Particulars}";
@@ -32,17 +32,17 @@
             size: A4;
             margin: 0.5cm;
         }
-        
+
         body {
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
         }
-        
+
         /* Prevent page breaks within critical sections */
         table { page-break-inside: avoid; }
         tr { page-break-inside: avoid; }
         .table-responsive { page-break-inside: avoid; }
-        
+
         /* Text overflow handling */
         .text-clamp-2 {
             display: -webkit-box;
@@ -52,7 +52,7 @@
             line-height: 1.2;
             max-height: 2.4em;
         }
-        
+
         .text-clamp-3 {
             display: -webkit-box;
             -webkit-line-clamp: 3;
@@ -61,7 +61,7 @@
             line-height: 1.2;
             max-height: 3.6em;
         }
-        
+
         /* Force word breaks for long strings */
         .break-word {
             word-wrap: break-word;
@@ -69,28 +69,28 @@
             overflow-wrap: break-word;
             hyphens: auto;
         }
-        
+
         /* Reduce spacing for compact layout */
         .compact-section {
             margin-top: 10px !important;
         }
-        
+
         /* Hide buttons during print */
         .buttons, .row.pt-2 {
             display: none !important;
         }
-        
+
         /* Prevent orphaned headings */
         h2, h3, h4, h5, h6, thead {
             page-break-after: avoid;
         }
-        
+
         /* Small font for long content */
         .small-if-long {
             font-size: 11px;
         }
     }
-    
+
     /* General styles for screen and print */
     .text-clamp-2 {
         display: -webkit-box;
@@ -99,7 +99,7 @@
         overflow: hidden;
         line-height: 1.2;
     }
-    
+
     .text-clamp-3 {
         display: -webkit-box;
         -webkit-line-clamp: 3;
@@ -107,7 +107,7 @@
         overflow: hidden;
         line-height: 1.2;
     }
-    
+
     .break-word {
         word-wrap: break-word;
         word-break: break-word;
@@ -118,19 +118,7 @@
 <br class="br-top" />
 <table class="w-100 mb-2">
     <tbody>
-    <tr>
-        <td class="text-end" style="padding: 0 !important;">
-            <img src="~/img/syvill.png" alt="Syvill Trade &amp; Supply logo" width="130px"/>
-        </td>
-    </tr>
-    <tr style="margin: 0 !important;">
-        <td class="text-center" style="padding: 0 !important;">
-            <h2 class="company-name" style="margin: 0 0 1px 0;"><u><b>&nbsp;SYVILL TRADE &amp; SUPPLY&nbsp;</b></u></h2>
-            <p style="margin: 0; padding: 0; line-height: 1;">
-                Unit 96 Columbia Tower, Ortigas Ave., Mandaluyong
-            </p>
-        </td>
-    </tr>
+    <partial name="_CompanyDocumentHeaderRows" />
     <tr>
         <td class="text-center" style="padding-top: 10px !important;">
             <h3 class="module-name">
@@ -528,13 +516,13 @@
             }
         </script>
     }
-    
+
     <script>
         function controllerThenPrint(id, supplierId) {
             var url = `@Url.Action("Printed", "CheckVoucherTrade", new { area = "Filpride" })?id=${id}&supplierId=${supplierId}`;
             window.location.href = url;
         }
     </script>
-    
+
     <script src="~/js/disable-dev-tools-in-print.js" asp-append-version="true"></script>
 }

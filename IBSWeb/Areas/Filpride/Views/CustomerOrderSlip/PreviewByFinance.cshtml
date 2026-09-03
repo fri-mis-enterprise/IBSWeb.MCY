@@ -1,20 +1,11 @@
 ﻿@using IBS.Models
 @using IBS.Models.Enums
 @using IBS.Utility.Constants
-@using Microsoft.AspNetCore.Identity
 @model CustomerOrderSlipForApprovalViewModel
-@inject SignInManager<ApplicationUser> SignInManager
 
 @{
     ViewData["Title"] = "Customer Order Slip - Preview";
-    
-    var selectedCompany = string.Empty;
 
-    if (SignInManager.IsSignedIn(User))
-    {
-        selectedCompany = User.Claims.FirstOrDefault(c => c.Type == "Company")?.Value;
-    }
-    
     var decimalFormat = Model.CustomerOrderSlip!.Customer!.CustomerType != nameof(CustomerType.Government) ? SD.Two_Decimal_Format : SD.Four_Decimal_Format;
 }
 
@@ -36,24 +27,12 @@
 
     <table class="w-100">
         <tbody>
-        <tr>
-            <td class="text-end" style="padding: 0 !important;">
-                <img src="~/img/syvill.png" alt="Syvill Trade &amp; Supply logo" width="130px"/>
-            </td>
-        </tr>
-        <tr style="margin: 0 !important;">
-            <td class="text-center" style="padding: 0 !important;">
-                <h2 class="company-name" style="margin: 0 0 1px 0;"><u><b>&nbsp;SYVILL TRADE &amp; SUPPLY&nbsp;</b></u></h2>
-                <p style="margin: 0; padding: 0; line-height: 1;">
-                    Unit 96 Columbia Tower, Ortigas Ave., Mandaluyong
-                </p>
-            </td>
-        </tr>
+        <partial name="_CompanyDocumentHeaderRows" />
         </tbody>
     </table>
-    
+
     <br/>
-    
+
     <div class="text-center mb-4">
         <h3><b>CUSTOMER ORDER SLIP</b></h3>
         <h6 class="text-end"><b>No.&nbsp;@Html.DisplayFor(model => model.CustomerOrderSlip!.CustomerOrderSlipNo)</b></h6>
@@ -128,7 +107,7 @@
             <thead>
             <tr>
                 <th class="text-center table-primary" colspan="2">
-                    Net Delivered Price 
+                    Net Delivered Price
                     <span data-bs-toggle="tooltip" title="All figures are exclusive of VAT." class="text-muted ms-1">
                         <i class="bi bi-info-circle"></i>
                     </span>
@@ -159,7 +138,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -182,7 +161,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -205,7 +184,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -228,7 +207,7 @@
             </tbody>
         </table>
     </div>
-    
+
     @if (Model.UploadedFiles?.Count != 0 && Model.UploadedFiles != null)
     {
         <div class="hide-in-print px-1 row d-flex justify-content-start">
@@ -274,7 +253,7 @@
                     <a onclick="confirmPrint(@Model.CustomerOrderSlip.CustomerOrderSlipId)" class="btn btn-primary form-control buttons">Print</a>
                 </div>
             }
-            
+
         }
 
         <div class="col-6 col-md-3">
@@ -349,7 +328,7 @@
 
             init();
         });
-        
+
         document.getElementById('approveButton').addEventListener('click', function () {
             Swal.fire({
                 title: 'Choose an action',
@@ -411,7 +390,7 @@
             });
         });
     </script>
-    
+
     <script>
         function confirmPrint(id)
         {
@@ -419,12 +398,12 @@
                 window.removeEventListener('afterprint', afterPrintHandler);
                 controllerThenPrint(id);
             };
-            
+
             window.addEventListener('afterprint', afterPrintHandler);
             window.print();
         }
     </script>
-    
+
     <script>
         function controllerThenPrint(id) {
             var url = `@Url.Action("Printed", "CustomerOrderSlip", new { area = "Filpride" })/${id}`;
