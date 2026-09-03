@@ -1,20 +1,11 @@
 ﻿@using IBS.Models
 @using IBS.Models.Enums
 @using IBS.Utility.Constants
-@using Microsoft.AspNetCore.Identity
 @model CustomerOrderSlipForApprovalViewModel
-@inject SignInManager<ApplicationUser> SignInManager
 
 @{
     ViewData["Title"] = "Customer Order Slip - Preview";
-    
-    var selectedCompany = string.Empty;
 
-    if (SignInManager.IsSignedIn(User))
-    {
-        selectedCompany = User.Claims.FirstOrDefault(c => c.Type == "Company")?.Value;
-    }
-    
     var decimalFormat = Model.CustomerOrderSlip!.Customer!.CustomerType != nameof(CustomerType.Government) ? SD.Two_Decimal_Format : SD.Four_Decimal_Format;
 }
 
@@ -33,16 +24,13 @@
             <b>DISAPPROVED</b>
         </div>
     }
-    
-    <div class="text-end">
-        <img src="~/img/mcy.png" alt="MCY Container Terminal and Logistics Inc. logo" width="130px"/>
-    </div>
+
+    <table class="w-100">
+        <tbody>
+        <partial name="_CompanyDocumentHeaderRows" />
+        </tbody>
+    </table>
     <div class="text-center mb-4">
-        <h2><u><b>MCY CONTAINER TERMINAL AND LOGISTICS INC.</b></u></h2>
-        <p>
-            Sitio Mataboc, Brgy. Calibuyo Tanza, Cavite 4108<br />
-            VAT Reg. TIN: 010-465-357-000
-        </p>
         <h3><b>CUSTOMER ORDER SLIP</b></h3>
         <h6 class="text-end"><b>No.&nbsp;@Html.DisplayFor(model => model.CustomerOrderSlip!.CustomerOrderSlipNo)</b></h6>
     </div>
@@ -116,7 +104,7 @@
             <thead>
             <tr>
                 <th class="text-center table-primary" colspan="2">
-                    Net Delivered Price 
+                    Net Delivered Price
                     <span data-bs-toggle="tooltip" title="All figures are exclusive of VAT." class="text-muted ms-1">
                         <i class="bi bi-info-circle"></i>
                     </span>
@@ -147,7 +135,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -170,7 +158,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -193,7 +181,7 @@
             </tbody>
         </table>
     </div>
-    
+
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -216,7 +204,7 @@
             </tbody>
         </table>
     </div>
-    
+
     @if (Model.UploadedFiles?.Count != 0 && Model.UploadedFiles != null)
     {
         <div class="hide-in-print px-1 row d-flex justify-content-start">
@@ -257,7 +245,7 @@
                     <a onclick="confirmPrint(@Model.CustomerOrderSlip.CustomerOrderSlipId)" class="btn btn-primary form-control buttons">Print</a>
                 </div>
             }
-            
+
         }
 
         <div class="col-6 col-md-3">
@@ -332,7 +320,7 @@
 
             init();
         });
-        
+
         document.getElementById('approveButton').addEventListener('click', function () {
             Swal.fire({
                 title: 'Choose an action',
@@ -394,7 +382,7 @@
             });
         });
     </script>
-    
+
     <script>
         function confirmPrint(id)
         {
@@ -402,12 +390,12 @@
                 window.removeEventListener('afterprint', afterPrintHandler);
                 controllerThenPrint(id);
             };
-            
+
             window.addEventListener('afterprint', afterPrintHandler);
             window.print();
         }
     </script>
-    
+
     <script>
         function controllerThenPrint(id) {
             var url = `@Url.Action("Printed", "CustomerOrderSlip", new { area = "Filpride" })/${id}`;
