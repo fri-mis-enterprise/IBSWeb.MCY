@@ -3,6 +3,7 @@ using System;
 using IBS.DataAccess.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IBS.DataAccess.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902084009_AddNewFieldIsActiveInBankAccountModel")]
+    partial class AddNewFieldIsActiveInBankAccountModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2242,128 +2245,6 @@ namespace IBS.DataAccess.Migrations
                     b.ToTable("filpride_provisional_receipts", (string)null);
                 });
 
-            modelBuilder.Entity("IBS.Models.Filpride.AccountsReceivable.FilprideRecurringServiceInvoice", b =>
-                {
-                    b.Property<int>("RecurringServiceInvoiceId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("recurring_service_invoice_id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("RecurringServiceInvoiceId"));
-
-                    b.Property<decimal>("AmountPerMonth")
-                        .HasColumnType("numeric(18,4)")
-                        .HasColumnName("amount_per_month");
-
-                    b.Property<string>("CanceledBy")
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("canceled_by");
-
-                    b.Property<DateTime?>("CanceledDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("canceled_date");
-
-                    b.Property<string>("CancellationRemarks")
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("cancellation_remarks");
-
-                    b.Property<string>("Company")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("company");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("created_by");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("created_date");
-
-                    b.Property<int>("CustomerId")
-                        .HasColumnType("integer")
-                        .HasColumnName("customer_id");
-
-                    b.Property<int>("DurationInMonths")
-                        .HasColumnType("integer")
-                        .HasColumnName("duration_in_months");
-
-                    b.Property<string>("EditedBy")
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("edited_by");
-
-                    b.Property<DateTime?>("EditedDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("edited_date");
-
-                    b.Property<DateOnly>("EndPeriod")
-                        .HasColumnType("date")
-                        .HasColumnName("end_period");
-
-                    b.Property<int>("GeneratedCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("generated_count");
-
-                    b.Property<string>("Instructions")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("instructions");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_active");
-
-                    b.Property<DateOnly?>("NextRunPeriod")
-                        .HasColumnType("date")
-                        .HasColumnName("next_run_period");
-
-                    b.Property<string>("PostedBy")
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("posted_by");
-
-                    b.Property<DateTime?>("PostedDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("posted_date");
-
-                    b.Property<int>("ServiceId")
-                        .HasColumnType("integer")
-                        .HasColumnName("service_id");
-
-                    b.Property<DateOnly>("StartPeriod")
-                        .HasColumnType("date")
-                        .HasColumnName("start_period");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(13)
-                        .HasColumnType("character varying(13)")
-                        .HasColumnName("type");
-
-                    b.Property<string>("VoidedBy")
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("voided_by");
-
-                    b.Property<DateTime?>("VoidedDate")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("voided_date");
-
-                    b.HasKey("RecurringServiceInvoiceId")
-                        .HasName("pk_filpride_recurring_service_invoices");
-
-                    b.HasIndex("CustomerId")
-                        .HasDatabaseName("ix_filpride_recurring_service_invoices_customer_id");
-
-                    b.HasIndex("ServiceId")
-                        .HasDatabaseName("ix_filpride_recurring_service_invoices_service_id");
-
-                    b.HasIndex("IsActive", "NextRunPeriod")
-                        .HasDatabaseName("ix_filpride_recurring_service_invoices_is_active_next_run_peri");
-
-                    b.ToTable("filpride_recurring_service_invoices", (string)null);
-                });
-
             modelBuilder.Entity("IBS.Models.Filpride.AccountsReceivable.FilprideSalesInvoice", b =>
                 {
                     b.Property<int>("SalesInvoiceId")
@@ -2707,10 +2588,6 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("posted_date");
 
-                    b.Property<int?>("RecurringServiceInvoiceId")
-                        .HasColumnType("integer")
-                        .HasColumnName("recurring_service_invoice_id");
-
                     b.Property<int>("ServiceId")
                         .HasColumnType("integer")
                         .HasColumnName("service_id");
@@ -2776,9 +2653,6 @@ namespace IBS.DataAccess.Migrations
 
                     b.HasIndex("ServiceId")
                         .HasDatabaseName("ix_filpride_service_invoices_service_id");
-
-                    b.HasIndex("RecurringServiceInvoiceId", "Period")
-                        .HasDatabaseName("ix_filpride_service_invoices_recurring_service_invoice_id_peri");
 
                     b.HasIndex("ServiceInvoiceNo")
                         .IsUnique()
@@ -5809,27 +5683,6 @@ namespace IBS.DataAccess.Migrations
                     b.Navigation("Supplier");
                 });
 
-            modelBuilder.Entity("IBS.Models.Filpride.AccountsReceivable.FilprideRecurringServiceInvoice", b =>
-                {
-                    b.HasOne("IBS.Models.Filpride.MasterFile.FilprideCustomer", "Customer")
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_filpride_recurring_service_invoices_filpride_customers_cust");
-
-                    b.HasOne("IBS.Models.Filpride.MasterFile.FilprideService", "Service")
-                        .WithMany()
-                        .HasForeignKey("ServiceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_filpride_recurring_service_invoices_filpride_services_servi");
-
-                    b.Navigation("Customer");
-
-                    b.Navigation("Service");
-                });
-
             modelBuilder.Entity("IBS.Models.Filpride.AccountsReceivable.FilprideSalesInvoice", b =>
                 {
                     b.HasOne("IBS.Models.Filpride.MasterFile.FilprideCustomer", "Customer")
@@ -5889,12 +5742,6 @@ namespace IBS.DataAccess.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_filpride_service_invoices_filpride_delivery_receipts_delive");
 
-                    b.HasOne("IBS.Models.Filpride.AccountsReceivable.FilprideRecurringServiceInvoice", "RecurringServiceInvoice")
-                        .WithMany()
-                        .HasForeignKey("RecurringServiceInvoiceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_filpride_service_invoices_filpride_recurring_service_invoic");
-
                     b.HasOne("IBS.Models.Filpride.MasterFile.FilprideService", "Service")
                         .WithMany()
                         .HasForeignKey("ServiceId")
@@ -5905,8 +5752,6 @@ namespace IBS.DataAccess.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("DeliveryReceipt");
-
-                    b.Navigation("RecurringServiceInvoice");
 
                     b.Navigation("Service");
                 });
