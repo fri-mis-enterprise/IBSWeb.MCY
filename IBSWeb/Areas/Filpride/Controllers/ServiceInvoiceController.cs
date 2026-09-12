@@ -1179,15 +1179,13 @@ namespace IBSWeb.Areas.Filpride.Controllers
             }
         }
 
-        private FilprideRecurringServiceInvoice BuildRecurringSetup(ServiceInvoiceViewModel viewModel,
-            string company)
+        private FilprideRecurringServiceInvoice BuildRecurringSetup(ServiceInvoiceViewModel viewModel)
         {
             var startPeriod = NormalizePeriod(viewModel.Period);
 
             return new FilprideRecurringServiceInvoice
             {
                 Type = viewModel.Type,
-                Company = company,
                 CustomerId = viewModel.CustomerId,
                 ServiceId = viewModel.ServiceId,
                 Instructions = viewModel.Instructions,

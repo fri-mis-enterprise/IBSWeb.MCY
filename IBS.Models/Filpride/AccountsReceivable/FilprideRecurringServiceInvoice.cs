@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using IBS.Models.Filpride.Integrated;
 using IBS.Models.Filpride.MasterFile;
 
 namespace IBS.Models.Filpride.AccountsReceivable
@@ -14,10 +13,6 @@ namespace IBS.Models.Filpride.AccountsReceivable
         [Required]
         [StringLength(13)]
         public string Type { get; set; } = string.Empty;
-
-        [Required]
-        [StringLength(20)]
-        public string Company { get; set; } = string.Empty;
 
         [Required]
         public int CustomerId { get; set; }
