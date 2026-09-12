@@ -1,13 +1,14 @@
+using System.Linq.Dynamic.Core;
+using System.Security.Claims;
 using IBS.DataAccess.Data;
 using IBS.DataAccess.Repository.IRepository;
-using IBS.Models;
 using IBS.Models.Enums;
 using IBS.Models.Filpride.AccountsReceivable;
 using IBS.Models.Filpride.Books;
 using IBS.Models.Filpride.Integrated;
 using IBS.Models.Filpride.ViewModels;
-using IBS.Services.Attributes;
 using IBS.Services;
+using IBS.Models;
 using IBS.Utility.Constants;
 using IBS.Utility.Helpers;
 using Microsoft.AspNetCore.Authorization;
@@ -15,13 +16,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
-using System.Linq.Dynamic.Core;
-using System.Security.Claims;
 
 namespace IBSWeb.Areas.Filpride.Controllers
 {
     [Area(nameof(Filpride))]
-    [CompanyAuthorize(nameof(Filpride))]
+    [Authorize]
     public class ServiceInvoiceController : Controller
     {
         private readonly ApplicationDbContext _dbContext;
@@ -49,19 +48,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
         {
             return User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.GivenName)?.Value
                    ?? User.Identity?.Name!;
-        }
-
-        private async Task<string?> GetCompanyClaimAsync()
-        {
-            var user = await _userManager.GetUserAsync(User);
-
-            if (user == null)
-            {
-                return null;
-            }
-
-            var claims = await _userManager.GetClaimsAsync(user);
-            return claims.FirstOrDefault(c => c.Type == "Company")?.Value;
         }
 
         private async Task<decimal> ComputeTransactionFeeGrossTotalAsync(FilprideDeliveryReceipt dr, CancellationToken cancellationToken)
@@ -121,7 +107,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
         {
             try
             {
-                var companyClaims = await GetCompanyClaimAsync();
 
                 var serviceInvoices = _unitOfWork.FilprideServiceInvoice
                     .GetAllQuery(x => true);
@@ -205,16 +190,10 @@ namespace IBSWeb.Areas.Filpride.Controllers
         [HttpGet]
         public async Task<IActionResult> Create(CancellationToken cancellationToken)
         {
-            var companyClaims = await GetCompanyClaimAsync();
-
-            if (companyClaims == null)
-            {
-                return BadRequest();
-            }
 
             var viewModel = new ServiceInvoiceViewModel
             {
-                Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(companyClaims, cancellationToken),
+                Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(cancellationToken),
                 Services = await _unitOfWork.GetFilprideServiceListById(cancellationToken)
             };
 
@@ -226,14 +205,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(ServiceInvoiceViewModel viewModel, CancellationToken cancellationToken)
         {
-            var companyClaims = await GetCompanyClaimAsync();
 
-            if (companyClaims == null)
-            {
-                return BadRequest();
-            }
-
-            viewModel.Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(companyClaims, cancellationToken);
+            viewModel.Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(cancellationToken);
             viewModel.Services = await _unitOfWork.GetFilprideServiceListById(cancellationToken);
 
             if (viewModel.CreationMode == null)
@@ -270,7 +243,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 if (viewModel.CreationMode == ServiceInvoiceCreationMode.Automatic)
                 {
-                    var recurringSetup = BuildRecurringSetup(viewModel, companyClaims);
+                    var recurringSetup = BuildRecurringSetup(viewModel);
                     await _dbContext.FilprideRecurringServiceInvoices.AddAsync(recurringSetup, cancellationToken);
                     await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -369,8 +342,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 return NotFound();
             }
 
-            var companyClaims = await GetCompanyClaimAsync();
-
             #region --Audit Trail Recording
 
             FilprideAuditTrail auditTrailBook = new(GetUserFullName(), $"Preview service invoice#{sv.ServiceInvoiceNo}", "Service Invoice");
@@ -410,8 +381,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 if (model.ServiceName == "TRANSACTION FEE")
                 {
-                    await ReverseTheDrEntries(model.DeliveryReceipt!, string.Empty,
-                        cancellationToken);
+                    await ReverseTheDrEntries(model.DeliveryReceipt!, cancellationToken);
                 }
 
                 #region --Audit Trail Recording
@@ -558,7 +528,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     dr.HasAlreadyInvoiced = false;
                     dr.Status = nameof(DRStatus.ForInvoicing);
 
-                    await RevertTheReversalOfDrEntries(dr, string.Empty, cancellationToken);
+                    await RevertTheReversalOfDrEntries(dr, cancellationToken);
                 }
 
                 await _unitOfWork.GeneralLedger.ReverseEntries(model.ServiceInvoiceNo, cancellationToken);
@@ -588,12 +558,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
         [HttpGet]
         public async Task<IActionResult> Edit(int id, CancellationToken cancellationToken)
         {
-            var companyClaims = await GetCompanyClaimAsync();
-
-            if (companyClaims == null)
-            {
-                return BadRequest();
-            }
 
             var existingModel = await _unitOfWork.FilprideServiceInvoice
                 .GetAsync(sv => sv.ServiceInvoiceId == id, cancellationToken);
@@ -607,7 +571,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
             {
                 ServiceInvoiceId = existingModel.ServiceInvoiceId,
                 CustomerId = existingModel.CustomerId,
-                Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(companyClaims, cancellationToken),
+                Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(cancellationToken),
                 ServiceId = existingModel.ServiceId,
                 Services = await _unitOfWork.GetFilprideServiceListById(cancellationToken),
                 DueDate = existingModel.DueDate,
@@ -633,7 +597,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 return NotFound();
             }
 
-            viewModel.Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(string.Empty, cancellationToken);
+            viewModel.Customers = await _unitOfWork.GetFilprideCustomerListAsyncById(cancellationToken);
             viewModel.Services = await _unitOfWork.GetFilprideServiceListById(cancellationToken);
 
             if (!ModelState.IsValid)
@@ -912,7 +876,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
             return Json(result);
         }
 
-        private async Task RevertTheReversalOfDrEntries(FilprideDeliveryReceipt dr, string company, CancellationToken cancellationToken)
+        private async Task RevertTheReversalOfDrEntries(FilprideDeliveryReceipt dr, CancellationToken cancellationToken)
         {
             var relatedRrNos = await GetReceivingReportReferencesByDeliveryReceiptAsync(dr.DeliveryReceiptId, cancellationToken);
 
@@ -924,7 +888,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        private async Task ReverseTheDrEntries(FilprideDeliveryReceipt dr, string company, CancellationToken cancellationToken)
+        private async Task ReverseTheDrEntries(FilprideDeliveryReceipt dr, CancellationToken cancellationToken)
         {
             var relatedRrNos = await GetReceivingReportReferencesByDeliveryReceiptAsync(dr.DeliveryReceiptId, cancellationToken);
 
@@ -977,7 +941,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
         {
             try
             {
-                var companyClaims = await GetCompanyClaimAsync();
 
                 var serviceInvoices = await _unitOfWork.FilprideServiceInvoice
                     .GetAllAsync(sv => sv.Type == nameof(DocumentType.Documented), cancellationToken);
@@ -1106,13 +1069,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     return BadRequest("Month and year are required.");
                 }
 
-                var companyClaims = await GetCompanyClaimAsync();
-
-                if (companyClaims == null)
-                {
-                    return BadRequest();
-                }
-
                 var serviceInvoices = await _unitOfWork.FilprideServiceInvoice
                     .GetAllAsync(x =>
 
@@ -1143,7 +1099,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 foreach (var service in serviceInvoices.Where(x => x.ServiceName == "TRANSACTION FEE"))
                 {
-                    await RevertTheReversalOfDrEntries(service.DeliveryReceipt!, string.Empty, cancellationToken);
+                    await RevertTheReversalOfDrEntries(service.DeliveryReceipt!, cancellationToken);
                 }
 
                 foreach (var service in serviceInvoices
@@ -1153,8 +1109,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                     if (service.ServiceName == "TRANSACTION FEE")
                     {
-                        await ReverseTheDrEntries(service.DeliveryReceipt!, string.Empty,
-                            cancellationToken);
+                        await ReverseTheDrEntries(service.DeliveryReceipt!, cancellationToken);
                     }
                 }
 
@@ -1198,7 +1153,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                  .GetAsync(x => x.DeliveryReceiptId == serviceInvoice.DeliveryReceiptId, cancellationToken)
                              ?? throw new NullReferenceException("DR not found!");
 
-                    await RevertTheReversalOfDrEntries(dr, string.Empty, cancellationToken);
+                    await RevertTheReversalOfDrEntries(dr, cancellationToken);
                 }
 
                 #region --Audit Trail Recording
