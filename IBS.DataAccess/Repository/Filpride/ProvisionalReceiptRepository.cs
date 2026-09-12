@@ -2,9 +2,11 @@ using System.Globalization;
 using System.Linq.Expressions;
 using IBS.DataAccess.Data;
 using IBS.DataAccess.Repository.Filpride.IRepository;
+using IBS.DTOs;
 using IBS.Models.Enums;
 using IBS.Models.Filpride.AccountsReceivable;
 using IBS.Models.Filpride.Books;
+using IBS.Models.Filpride.MasterFile;
 using IBS.Utility.Helpers;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +29,171 @@ namespace IBS.DataAccess.Repository.Filpride
                 nameof(DocumentType.Undocumented) => await GenerateCodeForUnDocumented(company, cancellationToken),
                 _ => throw new ArgumentException("Invalid type")
             };
+        }
+
+        public async Task PostAsync(int receiptId, string postedBy, SubAccountInfoDto? subAccountInfo,
+            CancellationToken cancellationToken = default)
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var receipt = await LockReceiptAsync(receiptId, cancellationToken);
+                if (receipt.Status != nameof(CollectionReceiptStatus.Pending) || receipt.PostedBy != null ||
+                    receipt.PostedDate != null || receipt.CanceledBy != null || receipt.VoidedBy != null)
+                {
+                    throw new InvalidOperationException("Only pending provisional receipts can be posted.");
+                }
+
+                if (receipt.CheckDate.HasValue && receipt.CheckDate.Value > DateTimeHelper.GetLastDayOfMonth())
+                {
+                    throw new InvalidOperationException("Future-dated checks cannot be posted.");
+                }
+
+                if (string.IsNullOrWhiteSpace(postedBy))
+                {
+                    throw new InvalidOperationException("The posting user could not be identified.");
+                }
+
+                var paymentAmount = receipt.CashAmount + receipt.CheckAmount + receipt.ManagersCheckAmount;
+                var fullTotal = paymentAmount + receipt.EWT + receipt.WVAT;
+                if (receipt.CashAmount < 0 || receipt.CheckAmount < 0 || receipt.ManagersCheckAmount < 0 ||
+                    receipt.EWT < 0 || receipt.WVAT < 0 || fullTotal <= 0 || receipt.Total != fullTotal)
+                {
+                    throw new InvalidOperationException("Receipt amounts must be non-negative, total must be positive, and the saved total must match its payment and withholding amounts.");
+                }
+
+                var category = await _db.FilprideCollectionCategories
+                    .IgnoreQueryFilters()
+                    .Include(c => c.CreditAccount)
+                    .SingleOrDefaultAsync(c => c.Id == receipt.CollectionCategoryId, cancellationToken)
+                    ?? throw new InvalidOperationException("The receipt collection category could not be found.");
+                if (!Enum.IsDefined(category.TaggingRequirement))
+                {
+                    throw new InvalidOperationException("The receipt category has an invalid tagging requirement.");
+                }
+                var creditAccount = category.CreditAccount;
+                if (creditAccount.HasChildren ||
+                    string.IsNullOrWhiteSpace(creditAccount.AccountNumber) ||
+                    string.IsNullOrWhiteSpace(creditAccount.AccountName))
+                {
+                    throw new InvalidOperationException("The category must use a valid credit account with no child accounts.");
+                }
+
+                var accountTitles = await GetListOfAccountTitleDto(cancellationToken);
+                var cashInBank = accountTitles.SingleOrDefault(a => a.AccountNumber == "101010100")
+                                 ?? throw new InvalidOperationException("Account title '101010100' not found.");
+                var cwt = accountTitles.SingleOrDefault(a => a.AccountNumber == "101060400")
+                          ?? throw new InvalidOperationException("Account title '101060400' not found.");
+                var cwv = accountTitles.SingleOrDefault(a => a.AccountNumber == "101060600")
+                          ?? throw new InvalidOperationException("Account title '101060600' not found.");
+
+                var postedDateAndTime = DateTimeHelper.GetCurrentPhilippineTime();
+                var postedDate = DateOnly.FromDateTime(postedDateAndTime);
+                var description = $"Collection of Provisional Receipt# {receipt.SeriesNumber} from {receipt.PayerName}";
+                var ledgers = new List<FilprideGeneralLedgerBook>();
+
+                void AddDebit(AccountTitleDto account, decimal amount)
+                {
+                    if (amount <= 0)
+                    {
+                        return;
+                    }
+
+                    ledgers.Add(new FilprideGeneralLedgerBook
+                    {
+                        Date = postedDate,
+                        Reference = receipt.SeriesNumber,
+                        Description = description,
+                        AccountId = account.AccountId,
+                        AccountNo = account.AccountNumber,
+                        AccountTitle = account.AccountName,
+                        Debit = amount,
+                        Credit = 0,
+                        CreatedBy = postedBy,
+                        CreatedDate = postedDateAndTime,
+                        ModuleType = nameof(ModuleType.Collection)
+                    });
+                }
+
+                AddDebit(cashInBank, paymentAmount);
+                AddDebit(cwt, receipt.EWT);
+                AddDebit(cwv, receipt.WVAT);
+                ledgers.Add(new FilprideGeneralLedgerBook
+                {
+                    Date = postedDate,
+                    Reference = receipt.SeriesNumber,
+                    Description = description,
+                    AccountId = creditAccount.AccountId,
+                    AccountNo = creditAccount.AccountNumber!,
+                    AccountTitle = creditAccount.AccountName,
+                    Debit = 0,
+                    Credit = fullTotal,
+                    CreatedBy = postedBy,
+                    CreatedDate = postedDateAndTime,
+                    SubAccountType = subAccountInfo?.Type,
+                    SubAccountId = subAccountInfo?.Id,
+                    SubAccountName = subAccountInfo?.Name,
+                    ModuleType = nameof(ModuleType.Collection)
+                });
+
+                receipt.PostedBy = postedBy;
+                receipt.PostedDate = postedDateAndTime;
+                receipt.Status = nameof(CollectionReceiptStatus.Posted);
+                _db.FilprideGeneralLedgerBooks.AddRange(ledgers);
+                _db.FilprideAuditTrails.Add(new FilprideAuditTrail(postedBy,
+                    $"Posted provisional receipt# {receipt.SeriesNumber}", "Provisional Receipt"));
+
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        public async Task UnpostAsync(int receiptId, string unpostedBy, CancellationToken cancellationToken = default)
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var receipt = await LockReceiptAsync(receiptId, cancellationToken);
+                if (receipt.PostedDate == null || receipt.PostedBy == null ||
+                    receipt.CanceledBy != null || receipt.VoidedBy != null)
+                {
+                    throw new InvalidOperationException("The provisional receipt must be posted before it can be unposted.");
+                }
+
+                var ledgerEntries = await _db.FilprideGeneralLedgerBooks
+                    .Where(entry => entry.Reference == receipt.SeriesNumber &&
+                                    entry.ModuleType == nameof(ModuleType.Collection))
+                    .ToListAsync(cancellationToken);
+
+                _db.FilprideGeneralLedgerBooks.RemoveRange(ledgerEntries);
+                receipt.PostedBy = null;
+                receipt.PostedDate = null;
+                receipt.Status = nameof(CollectionReceiptStatus.Pending);
+                _db.FilprideAuditTrails.Add(new FilprideAuditTrail(unpostedBy,
+                    $"Unposted provisional receipt# {receipt.SeriesNumber}", "Provisional Receipt"));
+
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        private async Task<FilprideProvisionalReceipt> LockReceiptAsync(int receiptId, CancellationToken cancellationToken)
+        {
+            var receipts = await _db.FilprideProvisionalReceipts
+                       .FromSqlInterpolated($"SELECT * FROM filpride_provisional_receipts WHERE id = {receiptId} FOR UPDATE")
+                       .ToListAsync(cancellationToken);
+            return receipts.SingleOrDefault()
+                   ?? throw new KeyNotFoundException("Provisional receipt id not found.");
         }
 
         private async Task<string> GenerateCodeForDocumented(string company, CancellationToken cancellationToken = default)
