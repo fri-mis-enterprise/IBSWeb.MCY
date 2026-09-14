@@ -1,4 +1,4 @@
-﻿@using IBS.Models
+@using IBS.Models
 @using IBS.Models.Enums
 @using IBS.Utility.Constants
 @model CustomerOrderSlipForApprovalViewModel
@@ -24,7 +24,7 @@
             <b>DISAPPROVED</b>
         </div>
     }
-
+    
     <table class="w-100">
         <tbody>
         <partial name="_CompanyDocumentHeaderRows" />
@@ -104,7 +104,7 @@
             <thead>
             <tr>
                 <th class="text-center table-primary" colspan="2">
-                    Net Delivered Price
+                    Net Delivered Price 
                     <span data-bs-toggle="tooltip" title="All figures are exclusive of VAT." class="text-muted ms-1">
                         <i class="bi bi-info-circle"></i>
                     </span>
@@ -135,7 +135,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -158,7 +158,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -181,7 +181,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -204,7 +204,7 @@
             </tbody>
         </table>
     </div>
-
+    
     @if (Model.UploadedFiles?.Count != 0 && Model.UploadedFiles != null)
     {
         <div class="hide-in-print px-1 row d-flex justify-content-start">
@@ -245,7 +245,7 @@
                     <a onclick="confirmPrint(@Model.CustomerOrderSlip.CustomerOrderSlipId)" class="btn btn-primary form-control buttons">Print</a>
                 </div>
             }
-
+            
         }
 
         <div class="col-6 col-md-3">
@@ -320,7 +320,7 @@
 
             init();
         });
-
+        
         document.getElementById('approveButton').addEventListener('click', function () {
             Swal.fire({
                 title: 'Choose an action',
@@ -382,7 +382,7 @@
             });
         });
     </script>
-
+    
     <script>
         function confirmPrint(id)
         {
@@ -390,12 +390,12 @@
                 window.removeEventListener('afterprint', afterPrintHandler);
                 controllerThenPrint(id);
             };
-
+            
             window.addEventListener('afterprint', afterPrintHandler);
             window.print();
         }
     </script>
-
+    
     <script>
         function controllerThenPrint(id) {
             var url = `@Url.Action("Printed", "CustomerOrderSlip", new { area = "Filpride" })/${id}`;

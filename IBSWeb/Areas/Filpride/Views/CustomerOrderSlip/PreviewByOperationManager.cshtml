@@ -1,4 +1,4 @@
-﻿@using IBS.Models
+@using IBS.Models
 @using IBS.Models.Enums
 @using IBS.Utility.Constants
 @model CustomerOrderSlipForApprovalViewModel
@@ -32,7 +32,7 @@
     </table>
 
     <br/>
-
+    
     <div class="text-center mb-4">
         <h3><b>CUSTOMER ORDER SLIP</b></h3>
         <h6 class="text-end"><b>No.&nbsp;@Html.DisplayFor(model => model.CustomerOrderSlip!.CustomerOrderSlipNo)</b></h6>
@@ -113,7 +113,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="table-responsive mb-3">
         <table class="table table-bordered">
             <thead>
@@ -128,7 +128,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -151,7 +151,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -174,7 +174,7 @@
             </tbody>
         </table>
     </div>
-
+    
     <div class="mt-3">
         <table class="w-100">
             <tbody>
@@ -316,7 +316,7 @@
 
             init();
         });
-
+        
         document.getElementById('approveButton').addEventListener('click', function () {
             let grossMarginValue = document.getElementById('grossMarginInput').value;
 
@@ -377,7 +377,7 @@
             function bindEvents() {
                 $(document).on('click', '.existingFile-link', showExistingUpload);
             }
-
+            
             function showExistingUpload(event) {
                 const fileName = $(event.currentTarget).data('name');
                 const fileUrl = $(event.currentTarget).data('url');
@@ -432,7 +432,7 @@
 
             init();
         });
-
+        
     </script>
 
     <script>
