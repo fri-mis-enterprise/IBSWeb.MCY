@@ -325,8 +325,9 @@ namespace IBS.Services
                 var currentDate = DateOnly.FromDateTime(currentDateTime);
 
                 var journalVouchers = await _dbContext.FilprideJournalVoucherHeaders
-                                          .Include(x => x.Details)
-                                          .Where(x => x.AutoReverseNextMonth)
+                                           .Include(x => x.Details)
+                                           .Include(x => x.CheckVoucherHeader)
+                                           .Where(x => x.AutoReverseNextMonth)
                                           .ToListAsync()
                                       ?? throw new InvalidOperationException("Journal voucher auto reverse next month not found.");
 
@@ -335,6 +336,7 @@ namespace IBS.Services
 
                 foreach (var journalVoucherHeaders in journalVouchers)
                 {
+                    var reversalEntryStart = ledgers.Count;
                     foreach (var detail in journalVoucherHeaders.Details!)
                     {
                         var account = accountTitlesDto.Find(c => c.AccountNumber == detail.AccountNo)
@@ -359,6 +361,17 @@ namespace IBS.Services
                                 ModuleType = nameof(ModuleType.Journal)
                             }
                         );
+                    }
+
+                    if (journalVoucherHeaders.CheckVoucherHeader?.SupplierId != null)
+                    {
+                        ledgers
+                            .Skip(reversalEntryStart)
+                            .SetCounterparty(
+                                CounterpartyType.Supplier,
+                                journalVoucherHeaders.CheckVoucherHeader.SupplierId,
+                                journalVoucherHeaders.CheckVoucherHeader.SupplierName
+                                    ?? journalVoucherHeaders.CheckVoucherHeader.Payee);
                     }
 
                     if (!_unitOfWork.FilprideJournalVoucher.IsJournalEntriesBalanced(ledgers))

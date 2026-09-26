@@ -89,6 +89,19 @@ namespace IBSWeb.Areas.Filpride.Controllers
             return claims.FirstOrDefault(c => c.Type == FilterTypeClaimType)?.Value;
         }
 
+        private async Task<List<SelectListItem>> GetAccruedAccountsAsync(CancellationToken cancellationToken)
+        {
+            return await _dbContext.FilprideChartOfAccounts
+                .Where(coa => coa.AccountName.Contains("Accrued") && !coa.HasChildren)
+                .OrderBy(x => x.AccountNumber)
+                .Select(coa => new SelectListItem
+                {
+                    Value = coa.AccountNumber,
+                    Text = $"{coa.AccountNumber} - {coa.AccountName}"
+                })
+                .ToListAsync(cancellationToken);
+        }
+
         private async Task<string?> GetSupplierEmployeeNumberAsync(int supplierId, CancellationToken cancellationToken)
         {
             return await _dbContext.FilprideSuppliers
@@ -387,8 +400,9 @@ namespace IBSWeb.Areas.Filpride.Controllers
             if (model != null)
             {
                 var chartOfAccount = _unitOfWork.FilprideChartOfAccount
-                    .GetAllQuery(x => x.AccountNumber != null &&
-                                      x.AccountNumber.StartsWith("55") &&
+                    .GetAllQuery(x =>
+                        (x.AccountNumber.StartsWith("55") ||
+                         x.AccountNumber.StartsWith("65")) &&
                                       !x.HasChildren)
                     .Select(x => new
                     {
@@ -397,6 +411,16 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     })
                     .OrderBy(x => x.AccountNumber)
                     .ToList();
+                var details = model.Details!
+                    .Select(x => new
+                    {
+                        x.AccountNo,
+                        x.AccountName,
+                        x.Debit,
+                        x.Credit
+                    })
+                    .ToList();
+
                 return Json(new
                 {
                     CVNo = model.CheckVoucherHeaderNo,
@@ -410,10 +434,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     Amount = model.Total,
                     model.Particulars,
                     model.CheckNo,
-                    AccountNo = model.Details!.Select(jvd => jvd.AccountNo),
-                    AccountName = model.Details!.Select(jvd => jvd.AccountName),
-                    Debit = model.Details!.Select(jvd => jvd.Debit),
-                    Credit = model.Details!.Select(jvd => jvd.Credit),
+                    Details = details,
                     TotalDebit = model.Details!.Sum(cvd => cvd.Debit),
                     TotalCredit = model.Details!.Sum(cvd => cvd.Credit),
                     ChartOfAccount = chartOfAccount
@@ -1599,6 +1620,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
             viewModel.MinDate = await _unitOfWork
                 .GetMinimumPeriodBasedOnThePostedPeriods(Module.JournalVoucher, cancellationToken);
 
+            viewModel.AccruedAccounts = await GetAccruedAccountsAsync(cancellationToken);
+
             return View(viewModel);
         }
 
@@ -1623,6 +1646,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
             viewModel.MinDate = await _unitOfWork
                 .GetMinimumPeriodBasedOnThePostedPeriods(Module.JournalVoucher, cancellationToken);
+
+            viewModel.AccruedAccounts = await GetAccruedAccountsAsync(cancellationToken);
 
             if (!ModelState.IsValid)
             {
@@ -1674,7 +1699,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                            .GetAsync(coa => coa.AccountNumber == acctNo.AccountNo, cancellationToken)
                                        ?? throw new NullReferenceException($"Account number {acctNo.AccountNo} not found");
 
-                    var isAccrualAccount = accountTitle.AccountName.Contains("AP - Accrued Expenses");
+                    var isAccrualAccount = accountTitle.AccountName.Contains("Accrued");
 
                     jvDetails.Add(
                         new FilprideJournalVoucherDetail
@@ -1768,7 +1793,14 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         })
                         .ToListAsync(cancellationToken),
                     MinDate = minDate,
-                    AutoReverseNextMonth = existingHeaderModel.AutoReverseNextMonth
+                    AutoReverseNextMonth = existingHeaderModel.AutoReverseNextMonth,
+                    SelectedAccruedAccount = existingDetailsModel
+                                                 .Where(x => x.AccountName.Contains("Accrued"))
+                                                 .Select(x => x.AccountNo)
+                                                 .FirstOrDefault()
+                                             ?? (await GetAccruedAccountsAsync(cancellationToken)).FirstOrDefault()?.Value
+                                             ?? "",
+                    AccruedAccounts = await GetAccruedAccountsAsync(cancellationToken)
                 };
 
                 foreach (var detail in existingDetailsModel)
@@ -1816,6 +1848,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
             viewModel.MinDate = await _unitOfWork
                 .GetMinimumPeriodBasedOnThePostedPeriods(Module.JournalVoucher, cancellationToken);
+
+            viewModel.AccruedAccounts = await GetAccruedAccountsAsync(cancellationToken);
 
             if (!ModelState.IsValid)
             {
@@ -1872,7 +1906,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                            .GetAsync(coa => coa.AccountNumber == acctNo.AccountNo, cancellationToken)
                                        ?? throw new NullReferenceException($"Account number {acctNo.AccountNo} not found");
 
-                    var isAccrualAccount = accountTitle.AccountName.Contains("AP - Accrued Expenses");
+                    var isAccrualAccount = accountTitle.AccountName.Contains("Accrued");
 
                     jvDetails.Add(
                         new FilprideJournalVoucherDetail
@@ -1920,6 +1954,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
         {
             var existingHeaderModel = await _dbContext.FilprideJournalVoucherHeaders
                 .Include(x => x.Details)
+                .Include(x => x.CheckVoucherHeader)
                 .FirstOrDefaultAsync(x => x.JournalVoucherHeaderId == id, cancellationToken)
                 ?? throw new InvalidOperationException($"Journal voucher header {id} not found.");
 
@@ -1954,6 +1989,15 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         ModuleType = nameof(ModuleType.Journal)
                     }
                 );
+            }
+
+            if (existingHeaderModel.CheckVoucherHeader?.SupplierId != null)
+            {
+                ledgers.SetCounterparty(
+                    CounterpartyType.Supplier,
+                    existingHeaderModel.CheckVoucherHeader.SupplierId,
+                    existingHeaderModel.CheckVoucherHeader.SupplierName
+                        ?? existingHeaderModel.CheckVoucherHeader.Payee);
             }
 
             if (!_unitOfWork.FilprideJournalVoucher.IsJournalEntriesBalanced(ledgers))
@@ -2051,8 +2095,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 var expenseAccount = viewModel.Details.First(d => d.Debit > 0).AccountTitle;
                 var prepaidAccount = viewModel.Details.First(d => d.Credit > 0).AccountTitle;
                 var expenseTitle = string.Join(" ", expenseAccount.Split(' ').Skip(1));
-
                 var particulars = $"Amortization of '{expenseTitle}' from {startingMonth:MMM yyyy} to {endingMonth:MMM yyyy}.";
+
                 var model = new FilprideJournalVoucherHeader
                 {
                     Type = cv.Type,
@@ -2186,7 +2230,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     MinDate = minDate,
                     SelectedExpenseAccount = existingAmortizationSetting.ExpenseAccount.Split(" ")[0],
                     SelectedPrepaidAccount = existingAmortizationSetting.PrepaidAccount.Split(" ")[0],
-                    NumberOfMonths = existingAmortizationSetting.OccurrenceTotal
+                    NumberOfMonths = existingAmortizationSetting.OccurrenceTotal,
+                    Particulars = header.Particulars
                 };
 
                 model.CvList = await _dbContext.FilprideCheckVoucherHeaders
@@ -2305,14 +2350,11 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 var endingMonth = startingMonth.AddMonths(viewModel.NumberOfMonths - 1);
                 var expenseAccount = viewModel.Details.First(d => d.Debit > 0).AccountTitle;
                 var prepaidAccount = viewModel.Details.First(d => d.Credit > 0).AccountTitle;
-                var expenseTitle = string.Join(" ", expenseAccount.Split(' ').Skip(1));
-
-                var particulars = $"Amortization of '{expenseTitle}' from {startingMonth:MMM yyyy} to {endingMonth:MMM yyyy}.";
 
                 existingHeaderModel.Date = viewModel.TransactionDate;
                 existingHeaderModel.References = viewModel.References;
                 existingHeaderModel.CVId = viewModel.CvId;
-                existingHeaderModel.Particulars = particulars;
+                existingHeaderModel.Particulars = viewModel.Particulars;
                 existingHeaderModel.CRNo = viewModel.CrNo;
                 existingHeaderModel.JVReason = viewModel.Reason;
                 existingHeaderModel.EditedBy = GetUserFullName();
