@@ -149,4 +149,12 @@ namespace IBS.Models.Enums
         Voided,
         Canceled
     }
+
+    public enum CounterpartyType
+    {
+        Customer = 1,
+        Supplier = 2,
+        BankAccount = 3,
+        Company = 4
+    }
 }

@@ -380,6 +380,11 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("date")
                         .HasColumnName("dcr_date");
 
+                    b.Property<string>("DocumentedByCompanyName")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("documented_by_company_name");
+
                     b.Property<string>("EditedBy")
                         .HasColumnType("varchar(50)")
                         .HasColumnName("edited_by");
@@ -395,6 +400,10 @@ namespace IBS.DataAccess.Migrations
                     b.Property<bool>("IsAdvances")
                         .HasColumnType("boolean")
                         .HasColumnName("is_advances");
+
+                    b.Property<bool?>("IsDocumentedByOtherCompany")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_documented_by_other_company");
 
                     b.Property<bool>("IsEmployeeAdvance")
                         .HasColumnType("boolean")
@@ -1279,6 +1288,24 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("customer_id");
 
+                    b.Property<DateOnly?>("CwVatPeriodFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("cw_vat_period_from");
+
+                    b.Property<DateOnly?>("CwVatPeriodTo")
+                        .HasColumnType("date")
+                        .HasColumnName("cw_vat_period_to");
+
+                    b.Property<string>("CwVatReference1")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("cw_vat_reference1");
+
+                    b.Property<string>("CwVatReference2")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("cw_vat_reference2");
+
                     b.Property<DateOnly?>("DepositedDate")
                         .HasColumnType("date")
                         .HasColumnName("deposited_date");
@@ -1294,6 +1321,24 @@ namespace IBS.DataAccess.Migrations
                     b.Property<DateTime?>("EditedDate")
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("edited_date");
+
+                    b.Property<DateOnly?>("EwtPeriodFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("ewt_period_from");
+
+                    b.Property<DateOnly?>("EwtPeriodTo")
+                        .HasColumnType("date")
+                        .HasColumnName("ewt_period_to");
+
+                    b.Property<string>("EwtReference1")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ewt_reference1");
+
+                    b.Property<string>("EwtReference2")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ewt_reference2");
 
                     b.Property<string>("F2306FileName")
                         .HasMaxLength(100)
@@ -1354,6 +1399,14 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("integer[]")
                         .HasColumnName("multiple_si_id");
 
+                    b.PrimitiveCollection<string[]>("MultipleSV")
+                        .HasColumnType("text[]")
+                        .HasColumnName("multiple_sv");
+
+                    b.PrimitiveCollection<int[]>("MultipleSVId")
+                        .HasColumnType("integer[]")
+                        .HasColumnName("multiple_sv_id");
+
                     b.PrimitiveCollection<DateOnly[]>("MultipleTransactionDate")
                         .HasColumnType("date[]")
                         .HasColumnName("multiple_transaction_date");
@@ -1385,6 +1438,10 @@ namespace IBS.DataAccess.Migrations
                         .HasMaxLength(13)
                         .HasColumnType("character varying(13)")
                         .HasColumnName("si_no");
+
+                    b.PrimitiveCollection<decimal[]>("SVMultipleAmount")
+                        .HasColumnType("numeric[]")
+                        .HasColumnName("sv_multiple_amount");
 
                     b.Property<string>("SVNo")
                         .HasMaxLength(13)
@@ -1475,6 +1532,10 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("character varying(13)")
                         .HasColumnName("collection_receipt_no");
 
+                    b.Property<decimal>("EWT")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("ewt");
+
                     b.Property<DateOnly>("InvoiceDate")
                         .HasColumnType("date")
                         .HasColumnName("invoice_date");
@@ -1484,6 +1545,10 @@ namespace IBS.DataAccess.Migrations
                         .HasMaxLength(13)
                         .HasColumnType("character varying(13)")
                         .HasColumnName("invoice_no");
+
+                    b.Property<decimal>("WVAT")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("wvat");
 
                     b.HasKey("Id")
                         .HasName("pk_filpride_collection_receipt_details");
@@ -2225,9 +2290,25 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("customer_tin");
 
+                    b.Property<decimal>("CwVatAmountPaid")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cw_vat_amount_paid");
+
+                    b.Property<decimal>("CwVatBalance")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cw_vat_balance");
+
                     b.Property<decimal>("CwVatPercent")
                         .HasColumnType("numeric(18,4)")
                         .HasColumnName("cw_vat_percent");
+
+                    b.Property<decimal>("CwtAmountPaid")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cwt_amount_paid");
+
+                    b.Property<decimal>("CwtBalance")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cwt_balance");
 
                     b.Property<decimal>("CwtPercent")
                         .HasColumnType("numeric(18,4)")
@@ -2264,10 +2345,6 @@ namespace IBS.DataAccess.Migrations
                     b.Property<bool>("IsPrinted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_printed");
-
-                    b.Property<bool>("IsTaxAndVatPaid")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_tax_and_vat_paid");
 
                     b.Property<string>("OtherRefNo")
                         .IsRequired()
@@ -2412,6 +2489,10 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("created_date");
 
+                    b.Property<decimal>("CreditAmount")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("credit_amount");
+
                     b.Property<decimal>("CurrentAndPreviousAmount")
                         .HasColumnType("numeric(18,4)")
                         .HasColumnName("current_and_previous_amount");
@@ -2442,6 +2523,26 @@ namespace IBS.DataAccess.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("customer_tin");
+
+                    b.Property<decimal>("CwVatAmountPaid")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cw_vat_amount_paid");
+
+                    b.Property<decimal>("CwVatBalance")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cw_vat_balance");
+
+                    b.Property<decimal>("CwtAmountPaid")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cwt_amount_paid");
+
+                    b.Property<decimal>("CwtBalance")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("cwt_balance");
+
+                    b.Property<decimal>("DebitAmount")
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("debit_amount");
 
                     b.Property<int?>("DeliveryReceiptId")
                         .HasColumnType("integer")
@@ -2642,6 +2743,18 @@ namespace IBS.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("varchar(200)")
                         .HasColumnName("account_title");
+
+                    b.Property<int?>("CounterpartyId")
+                        .HasColumnType("integer")
+                        .HasColumnName("counterparty_id");
+
+                    b.Property<string>("CounterpartyName")
+                        .HasColumnType("varchar(200)")
+                        .HasColumnName("counterparty_name");
+
+                    b.Property<int?>("CounterpartyType")
+                        .HasColumnType("integer")
+                        .HasColumnName("counterparty_type");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
@@ -4306,6 +4419,16 @@ namespace IBS.DataAccess.Migrations
                         .HasColumnName("customer_id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CustomerId"));
+
+                    b.Property<string>("BirDocumentFileName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("bir_document_file_name");
+
+                    b.Property<string>("BirDocumentFilePath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("bir_document_file_path");
 
                     b.Property<string>("BusinessStyle")
                         .HasMaxLength(100)

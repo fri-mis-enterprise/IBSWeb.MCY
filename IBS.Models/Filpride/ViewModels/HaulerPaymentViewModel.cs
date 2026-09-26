@@ -37,7 +37,6 @@ namespace IBS.Models.Filpride.ViewModels
         [Required]
         [Display(Name = "Check #")]
         [StringLength(50)]
-        [RegularExpression(@"^(?:\d{7,}|DM\d{10})$", ErrorMessage = "Invalid format. Please enter either a 'DM' followed by a 10-digits or CV number minimum 7 digits.")]
         public string CheckNo { get; set; } = null!;
 
         [Required]
@@ -75,6 +74,8 @@ namespace IBS.Models.Filpride.ViewModels
         public string? OldCVNo { get; set; }
 
         public string? Type { get; set; }
+
+        public CheckVoucherDocumentationViewModel Documentation { get; set; } = new();
 
         public DateTime MinDate { get; set; }
 

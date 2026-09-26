@@ -68,9 +68,14 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
         private readonly BrandingOptions _brandingOptions;
 
-        private readonly ILogger<GeneralLedgerReportController> _logger;
+        private readonly ILogger<AccountsPayableReportController> _logger;
 
-        public AccountsPayableReportController(ApplicationDbContext dbContext, UserManager<ApplicationUser> userManager, IUnitOfWork unitOfWork, IWebHostEnvironment webHostEnvironment, ILogger<GeneralLedgerReportController> logger,
+        public AccountsPayableReportController(
+            ApplicationDbContext dbContext,
+            UserManager<ApplicationUser> userManager,
+            IUnitOfWork unitOfWork,
+            IWebHostEnvironment webHostEnvironment,
+            ILogger<AccountsPayableReportController> logger,
             IOptions<BrandingOptions> brandingOptions)
         {
             _dbContext = dbContext;
@@ -422,7 +427,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     .Include(coa => coa.ParentAccount)
                         .ThenInclude(a => a!.ParentAccount)
                         .ThenInclude(a => a!.ParentAccount)
-                    .ToDictionaryAsync(c => c.AccountNumber!, cancellationToken);
+                    .ToDictionaryAsync(c => c.AccountNumber, cancellationToken);
 
                 foreach (var cd in clearedDisbursementReport)
                 {
@@ -441,7 +446,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         continue;
                     }
 
-                    var levelOneAccount = coa?.ParentAccount?.ParentAccount?.ParentAccount;
+                    var levelOneAccount = coa.ParentAccount?.ParentAccount?.ParentAccount;
 
                     worksheet.Cells[row, 1].Value = $"{levelOneAccount?.AccountNumber} " +
                                                     $"{levelOneAccount?.AccountName}";
@@ -518,8 +523,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 var nonTradeInvoiceReport =
                     await _dbContext.FilprideCheckVoucherDetails
                         .AsNoTracking()
-                        .Where(cvd => true
-                                      && cvd.CheckVoucherHeader!.CvType == nameof(CVType.Invoicing)
+                        .Where(cvd => cvd.CheckVoucherHeader!.CvType == nameof(CVType.Invoicing)
                                       && cvd.CheckVoucherHeader.Date >= dateFrom &&
                                       cvd.CheckVoucherHeader.Date <= dateTo
                                       && (statusFilter == "ValidOnly"
@@ -541,8 +545,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     .Where(x =>
                         x.PostedBy != null &&
                         x.Reference != null &&
-                        nonTradeNos.Contains(x.Reference) &&
-                        true)
+                        nonTradeNos.Contains(x.Reference))
                     .Select(x => new
                     {
                         x.Reference,
@@ -2860,7 +2863,17 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 var totalCommissionAmount = 0m;
                 var totalNetMarginPerLiter = 0m;
                 var totalNetMarginAmount = 0m;
-                var repoCalculator = _unitOfWork.FilpridePurchaseOrder;
+                var forTheAccountRows = new List<int>();
+                var forTheAccountVolume = 0m;
+                var forTheAccountCostAmount = 0m;
+                var forTheAccountNetPurchases = 0m;
+                var forTheAccountSalesAmount = 0m;
+                var forTheAccountNetSales = 0m;
+                var forTheAccountGmAmount = 0m;
+                var forTheAccountFcAmount = 0m;
+                var forTheAccountFcNet = 0m;
+                var forTheAccountCommissionAmount = 0m;
+                var forTheAccountNetMarginAmount = 0m;
 
                 #endregion -- Initialize "total" Variables for operations --
 
@@ -2882,6 +2895,16 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         StringComparer.OrdinalIgnoreCase);
                     var totalOverallMetric = new GrossMarginSummaryMetric();
                     var totalProductMetrics = CreateGrossMarginSummaryMetricMap(grossMarginProductList);
+                    var faoOverallMetricsByCustomerType = customerTypeNames.ToDictionary(
+                        customerType => customerType,
+                        _ => new GrossMarginSummaryMetric(),
+                        StringComparer.OrdinalIgnoreCase);
+                    var faoProductMetricsByCustomerType = customerTypeNames.ToDictionary(
+                        customerType => customerType,
+                        _ => CreateGrossMarginSummaryMetricMap(grossMarginProductList),
+                        StringComparer.OrdinalIgnoreCase);
+                    var faoTotalOverallMetric = new GrossMarginSummaryMetric();
+                    var faoTotalProductMetrics = CreateGrossMarginSummaryMetricMap(grossMarginProductList);
 
                 #endregion
 
@@ -2980,6 +3003,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         .Select(po => po.SupplierName)
                         .Where(value => !string.IsNullOrWhiteSpace(value))
                         .Distinct(StringComparer.OrdinalIgnoreCase));
+                    var isForTheAccount = supplierNames.Contains("FOR THE ACCOUNT", StringComparison.OrdinalIgnoreCase);
 
                     var terms = string.Join(", ", purchaseOrders
                         .Select(po => po.Terms)
@@ -3141,6 +3165,60 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     totalNetMarginPerLiter += netMarginPerLiter;
                     totalNetMarginAmount += netMarginAmount;
 
+                    if (isForTheAccount)
+                    {
+                        var faoOverallMetric = faoOverallMetricsByCustomerType[customerType];
+                        faoOverallMetric.Quantity += volume;
+                        faoOverallMetric.NetOfSales += netSales;
+                        faoOverallMetric.NetOfPurchases += netPurchases;
+                        faoOverallMetric.GrossMargin += gmAmount;
+                        faoOverallMetric.NetOfFreight += freightChargeNet;
+                        faoOverallMetric.Commission += commissionAmount;
+                        faoOverallMetric.NetMargin += netMarginAmount;
+
+                        faoTotalOverallMetric.Quantity += volume;
+                        faoTotalOverallMetric.NetOfSales += netSales;
+                        faoTotalOverallMetric.NetOfPurchases += netPurchases;
+                        faoTotalOverallMetric.GrossMargin += gmAmount;
+                        faoTotalOverallMetric.NetOfFreight += freightChargeNet;
+                        faoTotalOverallMetric.Commission += commissionAmount;
+                        faoTotalOverallMetric.NetMargin += netMarginAmount;
+
+                        if (faoProductMetricsByCustomerType[customerType].TryGetValue(productName, out var faoProductMetric))
+                        {
+                            faoProductMetric.Quantity += volume;
+                            faoProductMetric.NetOfSales += netSales;
+                            faoProductMetric.NetOfPurchases += netPurchases;
+                            faoProductMetric.GrossMargin += gmAmount;
+                            faoProductMetric.NetOfFreight += freightChargeNet;
+                            faoProductMetric.Commission += commissionAmount;
+                            faoProductMetric.NetMargin += netMarginAmount;
+                        }
+
+                        if (faoTotalProductMetrics.TryGetValue(productName, out var faoTotalProductMetric))
+                        {
+                            faoTotalProductMetric.Quantity += volume;
+                            faoTotalProductMetric.NetOfSales += netSales;
+                            faoTotalProductMetric.NetOfPurchases += netPurchases;
+                            faoTotalProductMetric.GrossMargin += gmAmount;
+                            faoTotalProductMetric.NetOfFreight += freightChargeNet;
+                            faoTotalProductMetric.Commission += commissionAmount;
+                            faoTotalProductMetric.NetMargin += netMarginAmount;
+                        }
+
+                        forTheAccountRows.Add(row);
+                        forTheAccountVolume += volume;
+                        forTheAccountCostAmount += costAmount;
+                        forTheAccountNetPurchases += netPurchases;
+                        forTheAccountSalesAmount += salesAmount;
+                        forTheAccountNetSales += netSales;
+                        forTheAccountGmAmount += gmAmount;
+                        forTheAccountFcAmount += freightChargeAmount;
+                        forTheAccountFcNet += freightChargeNet;
+                        forTheAccountCommissionAmount += commissionAmount;
+                        forTheAccountNetMarginAmount += netMarginAmount;
+                    }
+
                     #endregion
 
                     row++;
@@ -3231,7 +3309,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 textStyleForSummary.Style.Font.Size = 16;
                 textStyleForSummary.Style.Font.Bold = true;
 
-                gmReportWorksheet.Cells[rowForSummary - 3, 2].Value = "Summary";
+                gmReportWorksheet.Cells[rowForSummary - 3, 2].Value = "Summary (Including FAO)";
                 gmReportWorksheet.Cells[rowForSummary - 1, 2].Value = "Segment";
                 gmReportWorksheet.Cells[rowForSummary - 1, 3].Value = "Volume";
                 gmReportWorksheet.Cells[rowForSummary - 1, 4].Value = "Sales N. VAT";
@@ -3421,6 +3499,194 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 #endregion -- Summary Row --
 
+                if (forTheAccountRows.Count > 0)
+                {
+                    var forTheAccountSectionRow = rowForSummary + 3;
+                    gmReportWorksheet.Cells[forTheAccountSectionRow, 1].Value = "FAO";
+                    gmReportWorksheet.Cells[forTheAccountSectionRow, 1].Style.Font.Bold = true;
+                    gmReportWorksheet.Cells[forTheAccountSectionRow, 1].Style.Font.Color.SetColor(Color.Red);
+
+                    var forTheAccountHeaderRow = forTheAccountSectionRow + 1;
+                    gmReportWorksheet.Cells[7, 1, 7, 27]
+                        .Copy(gmReportWorksheet.Cells[forTheAccountHeaderRow, 1]);
+
+                    var forTheAccountDetailRow = forTheAccountHeaderRow + 1;
+                    foreach (var sourceRow in forTheAccountRows)
+                    {
+                        gmReportWorksheet.Cells[sourceRow, 1, sourceRow, 27]
+                            .Copy(gmReportWorksheet.Cells[forTheAccountDetailRow, 1]);
+                        forTheAccountDetailRow++;
+                    }
+
+                    var forTheAccountCostPerLiter = DivideOrZero(forTheAccountCostAmount, forTheAccountVolume);
+                    var forTheAccountCosPrice = DivideOrZero(forTheAccountSalesAmount, forTheAccountVolume);
+                    var forTheAccountGmPerLiter = DivideOrZero(forTheAccountGmAmount, forTheAccountVolume);
+                    var forTheAccountFreightCharge = DivideOrZero(forTheAccountFcAmount, forTheAccountVolume);
+                    var forTheAccountCommissionPerLiter = DivideOrZero(forTheAccountCommissionAmount, forTheAccountVolume);
+                    var forTheAccountNetMarginPerLiter = DivideOrZero(forTheAccountNetMarginAmount, forTheAccountVolume);
+
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 10].Value = "TOTAL FAO:";
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 12].Value = forTheAccountVolume;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 13].Value = forTheAccountCosPrice;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 14].Value = forTheAccountSalesAmount;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 15].Value = forTheAccountNetSales;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 16].Value = forTheAccountCostPerLiter;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 17].Value = forTheAccountCostAmount;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 18].Value = forTheAccountNetPurchases;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 19].Value = forTheAccountGmPerLiter;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 20].Value = forTheAccountGmAmount;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 21].Value = forTheAccountFreightCharge;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 22].Value = forTheAccountFcAmount;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 23].Value = forTheAccountFcNet;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 24].Value = forTheAccountCommissionPerLiter;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 25].Value = forTheAccountCommissionAmount;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 26].Value = forTheAccountNetMarginPerLiter;
+                    gmReportWorksheet.Cells[forTheAccountDetailRow, 27].Value = forTheAccountNetMarginAmount;
+
+                    using (var range = gmReportWorksheet.Cells[forTheAccountDetailRow, 1, forTheAccountDetailRow, 27])
+                    {
+                        range.Style.Font.Bold = true;
+                        range.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                        range.Style.Fill.BackgroundColor.SetColor(Color.FromArgb(172, 185, 202));
+                    }
+
+                    using (var range = gmReportWorksheet.Cells[forTheAccountDetailRow, 10, forTheAccountDetailRow, 27])
+                    {
+                        range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Double;
+                    }
+
+                    var actualGmRow = forTheAccountDetailRow + 2;
+                    var actualVolume = totalVolume - forTheAccountVolume;
+                    var actualCostAmount = totalCostAmount - forTheAccountCostAmount;
+                    var actualNetPurchases = totalNetPurchases - forTheAccountNetPurchases;
+                    var actualSalesAmount = totalSalesAmount - forTheAccountSalesAmount;
+                    var actualNetSales = totalNetSales - forTheAccountNetSales;
+                    var actualGmAmount = totalGmAmount - forTheAccountGmAmount;
+                    var actualFcAmount = totalFcAmount - forTheAccountFcAmount;
+                    var actualFcNet = totalFcNet - forTheAccountFcNet;
+                    var actualCommissionAmount = totalCommissionAmount - forTheAccountCommissionAmount;
+                    var actualNetMarginAmount = totalNetMarginAmount - forTheAccountNetMarginAmount;
+
+                    gmReportWorksheet.Cells[actualGmRow, 10].Value = "TOTAL GM";
+                    gmReportWorksheet.Cells[actualGmRow, 12].Value = actualVolume;
+                    gmReportWorksheet.Cells[actualGmRow, 13].Value = DivideOrZero(actualSalesAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 14].Value = actualSalesAmount;
+                    gmReportWorksheet.Cells[actualGmRow, 15].Value = actualNetSales;
+                    gmReportWorksheet.Cells[actualGmRow, 16].Value = DivideOrZero(actualCostAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 17].Value = actualCostAmount;
+                    gmReportWorksheet.Cells[actualGmRow, 18].Value = actualNetPurchases;
+                    gmReportWorksheet.Cells[actualGmRow, 19].Value = DivideOrZero(actualGmAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 20].Value = actualGmAmount;
+                    gmReportWorksheet.Cells[actualGmRow, 21].Value = DivideOrZero(actualFcAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 22].Value = actualFcAmount;
+                    gmReportWorksheet.Cells[actualGmRow, 23].Value = actualFcNet;
+                    gmReportWorksheet.Cells[actualGmRow, 24].Value = DivideOrZero(actualCommissionAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 25].Value = actualCommissionAmount;
+                    gmReportWorksheet.Cells[actualGmRow, 26].Value = DivideOrZero(actualNetMarginAmount, actualVolume);
+                    gmReportWorksheet.Cells[actualGmRow, 27].Value = actualNetMarginAmount;
+
+                    using var actualGmRange = gmReportWorksheet.Cells[actualGmRow, 1, actualGmRow, 27];
+                    actualGmRange.Style.Font.Bold = true;
+                    actualGmRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                    actualGmRange.Style.Fill.BackgroundColor.SetColor(Color.FromArgb(252, 228, 214));
+                    actualGmRange.Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                    actualGmRange.Style.Border.Bottom.Style = ExcelBorderStyle.Double;
+
+                    var summaryTitleRow = rowForSummary - customerTypeNames.Count - 3;
+                    var netOfFaoSummaryTitleRow = actualGmRow + 3;
+                    var summaryEndColumn = grossMarginProductList.Count > 0
+                        ? productSummaryStartColumn
+                          + (grossMarginProductList.Count - 1) * (productSummaryWidth + productSummarySpacing)
+                          + productSummaryWidth - 1
+                        : 10;
+                    gmReportWorksheet.Cells[summaryTitleRow, 2, rowForSummary, summaryEndColumn]
+                        .Copy(gmReportWorksheet.Cells[netOfFaoSummaryTitleRow, 2]);
+                    gmReportWorksheet.Cells[netOfFaoSummaryTitleRow, 2].Value = "Summary (Excluding FAO)";
+
+                    var netOfFaoSummaryHeaderRow = netOfFaoSummaryTitleRow + 1;
+                    gmReportWorksheet.Cells[netOfFaoSummaryHeaderRow, 3, netOfFaoSummaryHeaderRow, 10].Merge = true;
+
+                    for (var index = 0; index < grossMarginProductList.Count; index++)
+                    {
+                        var sectionStartColumn = productSummaryStartColumn + index * (productSummaryWidth + productSummarySpacing);
+                        gmReportWorksheet.Cells[
+                            netOfFaoSummaryHeaderRow,
+                            sectionStartColumn,
+                            netOfFaoSummaryHeaderRow,
+                            sectionStartColumn + productSummaryWidth - 1].Merge = true;
+                    }
+
+                    var netOfFaoSummaryRow = netOfFaoSummaryTitleRow + 3;
+                    foreach (var customerType in customerTypeNames)
+                    {
+                        var overallMetric = overallMetricsByCustomerType[customerType];
+                        var faoOverallMetric = faoOverallMetricsByCustomerType[customerType];
+                        var actualQuantity = overallMetric.Quantity - faoOverallMetric.Quantity;
+                        var actualNetMargin = overallMetric.NetMargin - faoOverallMetric.NetMargin;
+
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 3].Value = actualQuantity;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 4].Value = overallMetric.NetOfSales - faoOverallMetric.NetOfSales;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 5].Value = overallMetric.NetOfPurchases - faoOverallMetric.NetOfPurchases;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 6].Value = overallMetric.GrossMargin - faoOverallMetric.GrossMargin;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 7].Value = overallMetric.NetOfFreight - faoOverallMetric.NetOfFreight;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 8].Value = overallMetric.Commission - faoOverallMetric.Commission;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 9].Value = actualNetMargin;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, 10].Value = ComputeAverage(actualNetMargin, actualQuantity);
+
+                        for (var index = 0; index < grossMarginProductList.Count; index++)
+                        {
+                            var productName = grossMarginProductList[index];
+                            var sectionStartColumn = productSummaryStartColumn + index * (productSummaryWidth + productSummarySpacing);
+                            var productMetric = productMetricsByCustomerType[customerType][productName];
+                            var faoProductMetric = faoProductMetricsByCustomerType[customerType][productName];
+                            var actualProductQuantity = productMetric.Quantity - faoProductMetric.Quantity;
+                            var actualProductNetMargin = productMetric.NetMargin - faoProductMetric.NetMargin;
+
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn].Value = actualProductQuantity;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 1].Value = productMetric.NetOfSales - faoProductMetric.NetOfSales;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 2].Value = productMetric.NetOfPurchases - faoProductMetric.NetOfPurchases;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 3].Value = productMetric.GrossMargin - faoProductMetric.GrossMargin;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 4].Value = productMetric.NetOfFreight - faoProductMetric.NetOfFreight;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 5].Value = productMetric.Commission - faoProductMetric.Commission;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 6].Value = actualProductNetMargin;
+                            gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 7].Value = ComputeAverage(actualProductNetMargin, actualProductQuantity);
+                        }
+
+                        netOfFaoSummaryRow++;
+                    }
+
+                    var actualTotalQuantity = totalOverallMetric.Quantity - faoTotalOverallMetric.Quantity;
+                    var actualTotalNetMargin = totalOverallMetric.NetMargin - faoTotalOverallMetric.NetMargin;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 3].Value = actualTotalQuantity;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 4].Value = totalOverallMetric.NetOfSales - faoTotalOverallMetric.NetOfSales;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 5].Value = totalOverallMetric.NetOfPurchases - faoTotalOverallMetric.NetOfPurchases;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 6].Value = totalOverallMetric.GrossMargin - faoTotalOverallMetric.GrossMargin;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 7].Value = totalOverallMetric.NetOfFreight - faoTotalOverallMetric.NetOfFreight;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 8].Value = totalOverallMetric.Commission - faoTotalOverallMetric.Commission;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 9].Value = actualTotalNetMargin;
+                    gmReportWorksheet.Cells[netOfFaoSummaryRow, 10].Value = ComputeAverage(actualTotalNetMargin, actualTotalQuantity);
+
+                    for (var index = 0; index < grossMarginProductList.Count; index++)
+                    {
+                        var productName = grossMarginProductList[index];
+                        var sectionStartColumn = productSummaryStartColumn + index * (productSummaryWidth + productSummarySpacing);
+                        var totalProductMetric = totalProductMetrics[productName];
+                        var faoTotalProductMetric = faoTotalProductMetrics[productName];
+                        var actualTotalProductQuantity = totalProductMetric.Quantity - faoTotalProductMetric.Quantity;
+                        var actualTotalProductNetMargin = totalProductMetric.NetMargin - faoTotalProductMetric.NetMargin;
+
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn].Value = actualTotalProductQuantity;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 1].Value = totalProductMetric.NetOfSales - faoTotalProductMetric.NetOfSales;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 2].Value = totalProductMetric.NetOfPurchases - faoTotalProductMetric.NetOfPurchases;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 3].Value = totalProductMetric.GrossMargin - faoTotalProductMetric.GrossMargin;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 4].Value = totalProductMetric.NetOfFreight - faoTotalProductMetric.NetOfFreight;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 5].Value = totalProductMetric.Commission - faoTotalProductMetric.Commission;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 6].Value = actualTotalProductNetMargin;
+                        gmReportWorksheet.Cells[netOfFaoSummaryRow, sectionStartColumn + 7].Value = ComputeAverage(actualTotalProductNetMargin, actualTotalProductQuantity);
+                    }
+                }
+
                 // Auto-fit columns for better readability
                 gmReportWorksheet.Cells.AutoFitColumns();
                 gmReportWorksheet.View.FreezePanes(8, 1);
@@ -3471,7 +3737,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
             {
                 var receivingReports = await _dbContext.FilprideReceivingReports
                     .Include(rr => rr.PurchaseOrder).ThenInclude(po => po!.Supplier)
-                    .Where(rr => true&& rr.Date <= model.DateTo)
+                    .Where(rr => rr.Date <= model.DateTo)
                     .OrderBy(rr => rr.Date.Year)
                     .ThenBy(rr => rr.Date.Month)
                     .ThenBy(rr => rr.PurchaseOrder!.Supplier!.SupplierName)
@@ -3614,7 +3880,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                 var grandTotalEndingGross = 0m;
                                 var grandTotalEndingEwt = 0m;
                                 var grandTotalEndingNetAmount = 0m;
-                                var repoCalculator = _unitOfWork.FilpridePurchaseOrder;
 
                                 #endregion -- Initialize Variable for Computation
 
@@ -3899,8 +4164,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
                             idsOfRrsOfSelectedPeriodFromCv.FirstOrDefault(rr => rr.ReceivingReportId == rrSet.ReceivingReportId)!.AmountPaid
                     })
                     .GroupBy(rr => new MonthYear(
-                        rr.ReceivingReport.Date!.Year,
-                        rr.ReceivingReport.Date!.Month
+                        rr.ReceivingReport.Date.Year,
+                        rr.ReceivingReport.Date.Month
                     ));
 
                 var rrAndAmountPaidForPreviousPeriodFromCv = allRr
@@ -3913,29 +4178,29 @@ namespace IBSWeb.Areas.Filpride.Controllers
                             idsOfRrsOfPreviousPeriodsFromCv.FirstOrDefault(rr => rr.ReceivingReportId == rrSet.ReceivingReportId)!.AmountPaid
                     })
                     .GroupBy(rr => new MonthYear(
-                        rr.ReceivingReport.Date!.Year,
-                        rr.ReceivingReport.Date!.Month
+                        rr.ReceivingReport.Date.Year,
+                        rr.ReceivingReport.Date.Month
                     ));
 
                 var allRrGroupedByMonthYear = allRr
                     .GroupBy(rr => new MonthYear(
-                        rr.Date!.Year,
-                        rr.Date!.Month
+                        rr.Date.Year,
+                        rr.Date.Month
                     ));
 
                 var allPreviousRrGroupedByMonthYear = allRr
-                    .Where(rr => rr.Date! < dateFrom)
+                    .Where(rr => rr.Date < dateFrom)
                     .GroupBy(rr => new MonthYear(
-                        rr.Date!.Year,
-                        rr.Date!.Month
+                        rr.Date.Year,
+                        rr.Date.Month
                     ))
                     .ToList();
 
                 var allSelectedRrGroupedByMonthYear = allRr
-                    .Where(rr => rr.Date! >= dateFrom)
+                    .Where(rr => rr.Date >= dateFrom)
                     .GroupBy(rr => new MonthYear(
-                        rr.Date!.Year,
-                        rr.Date!.Month
+                        rr.Date.Year,
+                        rr.Date.Month
                     ))
                     .ToList();
 
@@ -4062,8 +4327,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 var grandTotalEwtEnding = 0m;
                 var grandTotalNetEnding = 0m;
 
-                var repoCalculator = _unitOfWork.FilpridePurchaseOrder;
-
                 #endregion == Initialize Variables ==
 
                 foreach (var allRrsSameMonthYear in allRrGroupedByMonthYear)
@@ -4076,9 +4339,9 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         .ToList();
 
                     // MONTH YEAR LABEL
-                    worksheet.Cells[row, 1].Value = (CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(sameMonthYearGroupedBySupplier.FirstOrDefault()?.FirstOrDefault()?.Date!.Month ?? 0))
+                    worksheet.Cells[row, 1].Value = (CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(sameMonthYearGroupedBySupplier.FirstOrDefault()?.FirstOrDefault()?.Date.Month ?? 0))
                                                     + " " +
-                                                    (sameMonthYearGroupedBySupplier.FirstOrDefault()?.FirstOrDefault()?.Date!.Year.ToString() ?? " ");
+                                                    (sameMonthYearGroupedBySupplier.FirstOrDefault()?.FirstOrDefault()?.Date.Year.ToString() ?? " ");
                     worksheet.Cells[row, 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
                     worksheet.Cells[row, 1].Style.Fill.BackgroundColor.SetColor(Color.Yellow);
                     row++;
@@ -4144,8 +4407,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                 foreach (var sameMonthYear in loopingMainRrGroupedByMonthYear)
                                 {
                                     // this process finds the rr that has the same month/year for current month/year section
-                                    if (sameMonthYear.FirstOrDefault()?.Date!.Month != allRrsSameMonthYear.FirstOrDefault()?.Date!.Month ||
-                                        sameMonthYear.FirstOrDefault()?.Date!.Year != allRrsSameMonthYear.FirstOrDefault()?.Date!.Year)
+                                    if (sameMonthYear.FirstOrDefault()?.Date!.Month != allRrsSameMonthYear.FirstOrDefault()?.Date.Month ||
+                                        sameMonthYear.FirstOrDefault()?.Date!.Year != allRrsSameMonthYear.FirstOrDefault()?.Date.Year)
                                     {
                                         continue;
                                     }
@@ -4181,7 +4444,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                             if (secondLoopSameMonthYear != null)
                                             {
                                                 secondLoopSameMonthYearSameSupplier = secondLoopSameMonthYear
-                                                    .Where(rr => rr.ReceivingReport!.PurchaseOrder!.Supplier!.SupplierName == sameMonthYearSameSupplier
+                                                    .Where(rr => rr.ReceivingReport.PurchaseOrder!.Supplier!.SupplierName == sameMonthYearSameSupplier
                                                     .FirstOrDefault()?.PurchaseOrder!.Supplier!.SupplierName)
                                                     .ToList();
 
@@ -4626,7 +4889,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     .ToList();
 
                 int row = 5;
-                var repoCalculator = _unitOfWork.FilpridePurchaseOrder;
                 var productList = GetOrderedProductNames(
                     groupBySupplierTermsAndType.SelectMany(group => group),
                     po => po.ProductName);
@@ -5379,9 +5641,9 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 worksheet.Cells[13, 3].Value = "Date Needed: ";
                 worksheet.Cells[13, 4].Value = "ASAP";
                 worksheet.Cells[14, 3].Value = "Supplier: ";
-                worksheet.Cells[14, 4].Value = purchaseOrder!.Supplier!.SupplierName;
+                worksheet.Cells[14, 4].Value = purchaseOrder.Supplier!.SupplierName;
                 worksheet.Cells[15, 3].Value = "IBS PO #: ";
-                worksheet.Cells[15, 4].Value = purchaseOrder!.PurchaseOrderNo;
+                worksheet.Cells[15, 4].Value = purchaseOrder.PurchaseOrderNo;
                 worksheet.Cells[16, 3].Value = "PO Date Created: ";
                 worksheet.Cells[16, 4].Value = receivingReports.FirstOrDefault()!.PurchaseOrder!.CreatedDate.ToString("MMM dd, yyyy");
                 worksheet.Cells[17, 3].Value = "Product: ";
@@ -6760,305 +7022,11 @@ namespace IBSWeb.Areas.Filpride.Controllers
                         worksheet.Cells[row, 2].Value = receivingReport.Date.ToString("MM/dd/yyyy");
                         worksheet.Cells[row, 3].Value = receivingReport.DeliveryReceipt!.DeliveredDate?.ToString("MM/dd/yyyy");
                         worksheet.Cells[row, 4].Value = receivingReport.DeliveryReceipt.Customer!.CustomerType;
-                        worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.Supplier!.SupplierName;
+                        worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.SupplierName;
                         worksheet.Cells[row, 6].Value = receivingReport.PurchaseOrder!.PurchaseOrderNo;
                         worksheet.Cells[row, 7].Value = receivingReport.ReceivingReportNo;
                         worksheet.Cells[row, 8].Value = receivingReport.DeliveryReceipt.DeliveryReceiptNo;
-                        worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.Customer.CustomerName;
-                        worksheet.Cells[row, 10].Value = receivingReport.PurchaseOrder.ProductName;
-                        worksheet.Cells[row, 11].Value = quantityServed;
-                        worksheet.Cells[row, 12].Value = salesAmount;
-                        worksheet.Cells[row, 13].Value = salesAmountVatEx;
-                        worksheet.Cells[row, 14].Value = salesPerLiterVatEx;
-                        worksheet.Cells[row, 15].Value = costAmount;
-                        worksheet.Cells[row, 16].Value = costAmountVatEx;
-                        worksheet.Cells[row, 17].Value = commissionPerLiter;
-                        worksheet.Cells[row, 18].Value = freightAmount;
-                        worksheet.Cells[row, 19].Value = freightAmountEx;
-                        worksheet.Cells[row, 20].Value = freightPerLiterEx;
-                        worksheet.Cells[row, 21].Value = commissionAmount;
-                        worksheet.Cells[row, 22].Value = commissionPerLiter;
-                        worksheet.Cells[row, 23].Value = gmAmount;
-                        worksheet.Cells[row, 24].Value = gmPerLiter;
-
-                        // styling
-                        using (var range = worksheet.Cells[row, 11, row, 23])
-                        {
-                            range.Style.Numberformat.Format = currencyFormatTwoDecimal;
-                        }
-                        fourDecimalColumnsGrandTotal = [14, 17, 20, 22, 24];
-                        foreach (var column in fourDecimalColumnsGrandTotal)
-                        {
-                            worksheet.Cells[row, column].Style.Numberformat.Format = currencyFormatFourDecimal;
-                        }
-
-                        row++;
-                        totalQuantityServed += quantityServed;
-                        totalSalesAmount += salesAmount;
-                        totalSalesAmountVatEx += salesAmountVatEx;
-                        totalCostAmount += costAmount;
-                        totalCostAmountVatEx += costAmountVatEx;
-                        totalFreightAmount += freightAmount;
-                        totalFreightAmountEx += freightAmountEx;
-                        totalCommissionAmount += commissionAmount;
-                        totalGmAmount += gmAmount;
-                    }
-
-                    row++;
-
-                    worksheet.Cells[row, 10].Value = "Sub-total";
-                    worksheet.Cells[row, 11].Value = totalQuantityServed;
-                    worksheet.Cells[row, 12].Value = totalSalesAmount;
-                    worksheet.Cells[row, 13].Value = totalSalesAmountVatEx;
-                    worksheet.Cells[row, 14].Value = DivideOrZero(totalSalesAmountVatEx, totalQuantityServed);
-                    worksheet.Cells[row, 15].Value = totalCostAmount;
-                    worksheet.Cells[row, 16].Value = totalCostAmountVatEx;
-                    worksheet.Cells[row, 17].Value = DivideOrZero(totalCostAmountVatEx, totalQuantityServed);
-                    worksheet.Cells[row, 18].Value = totalFreightAmount;
-                    worksheet.Cells[row, 19].Value = totalFreightAmountEx;
-                    worksheet.Cells[row, 20].Value = DivideOrZero(totalFreightAmountEx, totalQuantityServed);
-                    worksheet.Cells[row, 21].Value = totalCommissionAmount;
-                    worksheet.Cells[row, 22].Value = DivideOrZero(totalCommissionAmount, totalQuantityServed);
-                    worksheet.Cells[row, 23].Value = totalGmAmount;
-                    worksheet.Cells[row, 24].Value = DivideOrZero(totalGmAmount, totalQuantityServed);
-
-                    // styling
-                    using (var range = worksheet.Cells[row, 11, row, 23])
-                    {
-                        range.Style.Numberformat.Format = currencyFormatTwoDecimal;
-                    }
-                    fourDecimalColumnsGrandTotal = [14, 17, 20, 22, 24];
-                    foreach (var column in fourDecimalColumnsGrandTotal)
-                    {
-                        worksheet.Cells[row, column].Style.Numberformat.Format = currencyFormatFourDecimal;
-                    }
-                    using (var range = worksheet.Cells[row, 11, row, 24])
-                    {
-                        range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Double;
-                    }
-                    using (var range = worksheet.Cells[row, 10, row, 24])
-                    {
-                        range.Style.Font.Bold = true;
-                    }
-                }
-
-                if (inTransitNowToNextMonth.Count != 0)
-                {
-                    row += 2;
-
-                    // SEGMENT TITLE
-                    worksheet.Cells[row, 2].Value = "II. Purchased/Lifted this month, Sold/Delivered next month:";
-                    worksheet.Cells[row, 2].Style.Font.Color.SetColor(Color.Red);
-                    worksheet.Cells[row, 2].Style.Font.Bold = true;
-
-                    row++;
-                    col = 2;
-
-                    // SEGMENT COLUMN NAMES
-                    foreach (var columnName in breakdownColumnNames)
-                    {
-                        worksheet.Cells[row, col].Value = columnName;
-                        worksheet.Cells[row, col].Style.WrapText = true;
-                        col++;
-                    }
-                    // styling
-                    worksheet.Row(row).Height = 30;
-                    using (var range = worksheet.Cells[row, 2, row, 24])
-                    {
-                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                        range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                        range.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                        range.Style.Font.Bold = true;
-                    }
-
-                    row++;
-                    totalQuantityServed = 0m;
-                    totalSalesAmount = 0m;
-                    totalSalesAmountVatEx = 0m;
-                    totalCostAmount = 0m;
-                    totalCostAmountVatEx = 0m;
-                    totalFreightAmount = 0m;
-                    totalFreightAmountEx = 0m;
-                    totalCommissionAmount = 0m;
-                    totalGmAmount = 0m;
-
-                    foreach (var receivingReport in inTransitNowToNextMonth)
-                    {
-                        var quantityServed = receivingReport.QuantityReceived;
-                        var salesAmount = receivingReport.DeliveryReceipt!.TotalAmount;
-                        var salesAmountVatEx = NetOfVatByVatType(salesAmount,
-                            receivingReport.DeliveryReceipt.CustomerOrderSlip?.VatType);
-                        var salesPerLiterVatEx = DivideOrZero(salesAmountVatEx, quantityServed);
-                        var costAmount = receivingReport.Amount;
-                        var costAmountVatEx = NetOfVatByVatType(costAmount, receivingReport.PurchaseOrder!.VatType);
-                        var costPerLiterVatEx = DivideOrZero(costAmountVatEx, quantityServed);
-                        var freightAmount = receivingReport.DeliveryReceipt!.FreightAmount;
-                        var freightAmountEx = NetOfVatByVatType(freightAmount,
-                            receivingReport.DeliveryReceipt.HaulerVatType);
-                        var freightPerLiterEx = DivideOrZero(freightAmountEx, quantityServed);
-                        var commissionAmount = NetOfVatByVatType(receivingReport.DeliveryReceipt!.CommissionAmount,
-                            receivingReport.DeliveryReceipt.CustomerOrderSlip?.CommissioneeVatType);
-                        var commissionPerLiter = DivideOrZero(commissionAmount, quantityServed);
-                        var gmAmount = RoundToFour(salesAmountVatEx - costAmountVatEx - freightAmountEx - commissionAmount);
-                        var gmPerLiter = DivideOrZero(gmAmount, quantityServed);
-
-                        // SUBTOTAL BY SEGMENT
-                        worksheet.Cells[row, 2].Value = receivingReport.Date.ToString("MM/dd/yyyy");
-                        worksheet.Cells[row, 3].Value = receivingReport.DeliveryReceipt!.DeliveredDate?.ToString("MM/dd/yyyy");
-                        worksheet.Cells[row, 4].Value = receivingReport.DeliveryReceipt.Customer!.CustomerType;
-                        worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.Supplier!.SupplierName;
-                        worksheet.Cells[row, 6].Value = receivingReport.PurchaseOrder!.PurchaseOrderNo;
-                        worksheet.Cells[row, 7].Value = receivingReport.ReceivingReportNo;
-                        worksheet.Cells[row, 8].Value = receivingReport.DeliveryReceipt.DeliveryReceiptNo;
-                        worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.Customer.CustomerName;
-                        worksheet.Cells[row, 10].Value = receivingReport.PurchaseOrder.ProductName;
-                        worksheet.Cells[row, 11].Value = quantityServed;
-                        worksheet.Cells[row, 12].Value = salesAmount;
-                        worksheet.Cells[row, 13].Value = salesAmountVatEx;
-                        worksheet.Cells[row, 14].Value = salesPerLiterVatEx;
-                        worksheet.Cells[row, 15].Value = costAmount;
-                        worksheet.Cells[row, 16].Value = costAmountVatEx;
-                        worksheet.Cells[row, 17].Value = commissionPerLiter;
-                        worksheet.Cells[row, 18].Value = freightAmount;
-                        worksheet.Cells[row, 19].Value = freightAmountEx;
-                        worksheet.Cells[row, 20].Value = freightPerLiterEx;
-                        worksheet.Cells[row, 21].Value = commissionAmount;
-                        worksheet.Cells[row, 22].Value = commissionPerLiter;
-                        worksheet.Cells[row, 23].Value = gmAmount;
-                        worksheet.Cells[row, 24].Value = gmPerLiter;
-
-                        // styling
-                        using (var range = worksheet.Cells[row, 11, row, 23])
-                        {
-                            range.Style.Numberformat.Format = currencyFormatTwoDecimal;
-                        }
-                        fourDecimalColumnsGrandTotal = [14, 17, 20, 22, 24];
-                        foreach (var column in fourDecimalColumnsGrandTotal)
-                        {
-                            worksheet.Cells[row, column].Style.Numberformat.Format = currencyFormatFourDecimal;
-                        }
-
-                        row++;
-                        totalQuantityServed += quantityServed;
-                        totalSalesAmount += salesAmount;
-                        totalSalesAmountVatEx += salesAmountVatEx;
-                        totalCostAmount += costAmount;
-                        totalCostAmountVatEx += costAmountVatEx;
-                        totalFreightAmount += freightAmount;
-                        totalFreightAmountEx += freightAmountEx;
-                        totalCommissionAmount += commissionAmount;
-                        totalGmAmount += gmAmount;
-                    }
-
-                    row++;
-
-                    worksheet.Cells[row, 10].Value = "Sub-total";
-                    worksheet.Cells[row, 11].Value = totalQuantityServed;
-                    worksheet.Cells[row, 12].Value = totalSalesAmount;
-                    worksheet.Cells[row, 13].Value = totalSalesAmountVatEx;
-                    worksheet.Cells[row, 14].Value = DivideOrZero(totalSalesAmountVatEx, totalQuantityServed);
-                    worksheet.Cells[row, 15].Value = totalCostAmount;
-                    worksheet.Cells[row, 16].Value = totalCostAmountVatEx;
-                    worksheet.Cells[row, 17].Value = DivideOrZero(totalCostAmountVatEx, totalQuantityServed);
-                    worksheet.Cells[row, 18].Value = totalFreightAmount;
-                    worksheet.Cells[row, 19].Value = totalFreightAmountEx;
-                    worksheet.Cells[row, 20].Value = DivideOrZero(totalFreightAmountEx, totalQuantityServed);
-                    worksheet.Cells[row, 21].Value = totalCommissionAmount;
-                    worksheet.Cells[row, 22].Value = DivideOrZero(totalCommissionAmount, totalQuantityServed);
-                    worksheet.Cells[row, 23].Value = totalGmAmount;
-                    worksheet.Cells[row, 24].Value = DivideOrZero(totalGmAmount, totalQuantityServed);
-
-                    // styling
-                    using (var range = worksheet.Cells[row, 11, row, 23])
-                    {
-                        range.Style.Numberformat.Format = currencyFormatTwoDecimal;
-                    }
-                    fourDecimalColumnsGrandTotal = [14, 17, 20, 22, 24];
-                    foreach (var column in fourDecimalColumnsGrandTotal)
-                    {
-                        worksheet.Cells[row, column].Style.Numberformat.Format = currencyFormatFourDecimal;
-                    }
-                    using (var range = worksheet.Cells[row, 11, row, 24])
-                    {
-                        range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Double;
-                    }
-                    using (var range = worksheet.Cells[row, 10, row, 24])
-                    {
-                        range.Style.Font.Bold = true;
-                    }
-                }
-
-                if (rrWithIOCForAccountOfMMSI.Count != 0)
-                {
-                    row += 2;
-
-                    // SEGMENT TITLE
-                    worksheet.Cells[row, 2].Value = "III. Breakdown of Trading Fee to MMSI";
-                    worksheet.Cells[row, 2].Style.Font.Color.SetColor(Color.Red);
-                    worksheet.Cells[row, 2].Style.Font.Bold = true;
-
-                    row++;
-                    col = 2;
-
-                    // SEGMENT COLUMN NAMES
-                    foreach (var columnName in breakdownColumnNames)
-                    {
-                        worksheet.Cells[row, col].Value = columnName;
-                        worksheet.Cells[row, col].Style.WrapText = true;
-                        col++;
-                    }
-                    // styling
-                    worksheet.Row(row).Height = 30;
-                    using (var range = worksheet.Cells[row, 2, row, 24])
-                    {
-                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                        range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
-                        range.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
-                        range.Style.Font.Bold = true;
-                    }
-
-                    row++;
-                    totalQuantityServed = 0m;
-                    totalSalesAmount = 0m;
-                    totalSalesAmountVatEx = 0m;
-                    totalCostAmount = 0m;
-                    totalCostAmountVatEx = 0m;
-                    totalFreightAmount = 0m;
-                    totalFreightAmountEx = 0m;
-                    totalCommissionAmount = 0m;
-                    totalGmAmount = 0m;
-
-                    foreach (var receivingReport in rrWithIOCForAccountOfMMSI)
-                    {
-                        var quantityServed = receivingReport.QuantityReceived;
-                        var salesAmount = receivingReport.DeliveryReceipt!.TotalAmount;
-                        var salesAmountVatEx = NetOfVatByVatType(salesAmount,
-                            receivingReport.DeliveryReceipt.CustomerOrderSlip?.VatType);
-                        var salesPerLiterVatEx = DivideOrZero(salesAmountVatEx, quantityServed);
-                        var costAmount = receivingReport.Amount;
-                        var costAmountVatEx = NetOfVatByVatType(costAmount, receivingReport.PurchaseOrder!.VatType);
-                        var costPerLiterVatEx = DivideOrZero(costAmountVatEx, quantityServed);
-                        var freightAmount = receivingReport.DeliveryReceipt!.FreightAmount;
-                        var freightAmountEx = NetOfVatByVatType(freightAmount,
-                            receivingReport.DeliveryReceipt.HaulerVatType);
-                        var freightPerLiterEx = DivideOrZero(freightAmountEx, quantityServed);
-                        var commissionAmount = NetOfVatByVatType(receivingReport.DeliveryReceipt!.CommissionAmount,
-                            receivingReport.DeliveryReceipt.CustomerOrderSlip?.CommissioneeVatType);
-                        var commissionPerLiter = DivideOrZero(commissionAmount, quantityServed);
-                        var gmAmount = RoundToFour(salesAmountVatEx - costAmountVatEx - freightAmountEx - commissionAmount);
-                        var gmPerLiter = DivideOrZero(gmAmount, quantityServed);
-
-                        // SUBTOTAL BY SEGMENT
-                        worksheet.Cells[row, 2].Value = receivingReport.Date.ToString("MM/dd/yyyy");
-                        worksheet.Cells[row, 3].Value = receivingReport.DeliveryReceipt!.DeliveredDate?.ToString("MM/dd/yyyy");
-                        worksheet.Cells[row, 4].Value = receivingReport.DeliveryReceipt.Customer!.CustomerType;
-                        worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.Supplier!.SupplierName;
-                        worksheet.Cells[row, 6].Value = receivingReport.PurchaseOrder!.PurchaseOrderNo;
-                        worksheet.Cells[row, 7].Value = receivingReport.ReceivingReportNo;
-                        worksheet.Cells[row, 8].Value = receivingReport.DeliveryReceipt.DeliveryReceiptNo;
-                        worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.Customer.CustomerName;
+                        worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.CustomerOrderSlip!.CustomerName;
                         worksheet.Cells[row, 10].Value = receivingReport.PurchaseOrder.ProductName;
                         worksheet.Cells[row, 11].Value = quantityServed;
                         worksheet.Cells[row, 12].Value = salesAmount;
@@ -7241,11 +7209,11 @@ namespace IBSWeb.Areas.Filpride.Controllers
                                 worksheet.Cells[row, 2].Value = receivingReport.Date.ToString("MM/dd/yyyy");
                                 worksheet.Cells[row, 3].Value = receivingReport.DeliveryReceipt!.DeliveredDate?.ToString("MM/dd/yyyy");
                                 worksheet.Cells[row, 4].Value = receivingReport.DeliveryReceipt.Customer!.CustomerType;
-                                worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.Supplier!.SupplierName;
+                                worksheet.Cells[row, 5].Value = receivingReport.PurchaseOrder!.SupplierName;
                                 worksheet.Cells[row, 6].Value = receivingReport.PurchaseOrder!.PurchaseOrderNo;
                                 worksheet.Cells[row, 7].Value = receivingReport.ReceivingReportNo;
                                 worksheet.Cells[row, 8].Value = receivingReport.DeliveryReceipt.DeliveryReceiptNo;
-                                worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.Customer.CustomerName;
+                                worksheet.Cells[row, 9].Value = receivingReport.DeliveryReceipt.CustomerOrderSlip!.CustomerName;
                                 worksheet.Cells[row, 10].Value = receivingReport.PurchaseOrder.Product!.ProductName;
                                 worksheet.Cells[row, 11].Value = quantityServed;
                                 worksheet.Cells[row, 12].Value = salesAmount;

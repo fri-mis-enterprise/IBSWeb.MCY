@@ -325,6 +325,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     ? $"Recurring setup saved. Service invoice #{model.ServiceInvoiceNo} created successfully."
                     : $"Service invoice #{model.ServiceInvoiceNo} created successfully.";
                 await _unitOfWork.SaveAsync(cancellationToken);
+                await _unitOfWork.FilprideServiceInvoice.RecalculateTaxBalancesAsync(model.ServiceInvoiceId, cancellationToken);
+                await _unitOfWork.SaveAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return RedirectToAction(nameof(Index));
             }
@@ -391,6 +393,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 model.Status = nameof(Status.Posted);
 
                 await _unitOfWork.FilprideServiceInvoice.PostAsync(model, cancellationToken);
+                await _unitOfWork.FilprideServiceInvoice.RecalculateTaxBalancesAsync(model.ServiceInvoiceId, cancellationToken);
 
                 if (model.ServiceName == "TRANSACTION FEE")
                 {
@@ -514,7 +517,10 @@ namespace IBSWeb.Areas.Filpride.Controllers
             }
 
             var hasAlreadyBeenUsed =
-                await _dbContext.FilprideCollectionReceipts.AnyAsync(cr => cr.ServiceInvoiceId == model.ServiceInvoiceId && cr.Status != nameof(Status.Voided), cancellationToken) ||
+                await _dbContext.FilprideCollectionReceipts.AnyAsync(cr =>
+                    (cr.ServiceInvoiceId == model.ServiceInvoiceId ||
+                     (cr.MultipleSVId != null && cr.MultipleSVId.Contains(model.ServiceInvoiceId))) &&
+                    cr.Status != nameof(Status.Voided), cancellationToken) ||
                 await _dbContext.FilprideDebitMemos.AnyAsync(dm => dm.ServiceInvoiceId == model.ServiceInvoiceId && dm.Status != nameof(Status.Voided), cancellationToken) ||
                 await _dbContext.FilprideCreditMemos.AnyAsync(cm => cm.ServiceInvoiceId == model.ServiceInvoiceId && cm.Status != nameof(Status.Voided), cancellationToken);
 
@@ -724,6 +730,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
 
                 #endregion --Additional procedure for Transaction Fee
 
+                await _unitOfWork.SaveAsync(cancellationToken);
+                await _unitOfWork.FilprideServiceInvoice.RecalculateTaxBalancesAsync(existingModel.ServiceInvoiceId, cancellationToken);
                 await _unitOfWork.SaveAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 TempData["success"] = "Service invoice updated successfully.";
@@ -958,6 +966,9 @@ namespace IBSWeb.Areas.Filpride.Controllers
                     SubAccountType = originalEntry.SubAccountType,
                     SubAccountId = originalEntry.SubAccountId,
                     SubAccountName = originalEntry.SubAccountName,
+                    CounterpartyType = originalEntry.CounterpartyType,
+                    CounterpartyId = originalEntry.CounterpartyId,
+                    CounterpartyName = originalEntry.CounterpartyName,
                     ModuleType = originalEntry.ModuleType,
                 };
 
