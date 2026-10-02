@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IBS.DataAccess.Data
 {
-    public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+    public class ApplicationDbContext: IdentityDbContext<ApplicationUser>
     {
         public ApplicationDbContext(DbContextOptions options) : base(options)
         {
@@ -199,6 +199,7 @@ namespace IBS.DataAccess.Data
                 dr.HasIndex(dr => dr.DeliveryReceiptNo).IsUnique();
 
                 dr.HasIndex(dr => dr.Date);
+                dr.HasIndex(dr => dr.DeliveredDate);
 
                 dr.HasOne(dr => dr.CustomerOrderSlip)
                     .WithMany(cos => cos.DeliveryReceipts)
@@ -436,6 +437,8 @@ namespace IBS.DataAccess.Data
                     sv.RecurringServiceInvoiceId,
                     sv.Period
                 });
+                sv.HasIndex(sv => sv.ServiceInvoiceNo).IsUnique();
+                sv.HasIndex(sv => sv.Period);
             });
 
             #endregion -- Service Invoice --
@@ -488,6 +491,7 @@ namespace IBS.DataAccess.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 cr.HasIndex(cr => cr.CollectionReceiptNo).IsUnique();
+                cr.HasIndex(cr => cr.TransactionDate);
             });
 
             builder.Entity<FilprideCollectionReceiptDetail>(crd =>
@@ -527,6 +531,7 @@ namespace IBS.DataAccess.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 pr.HasIndex(d => d.SeriesNumber).IsUnique();
+                pr.HasIndex(d => d.TransactionDate);
             });
 
             #endregion -- Collection Receipt --
@@ -546,6 +551,7 @@ namespace IBS.DataAccess.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
                 dm.HasIndex(dm => dm.DebitMemoNo).IsUnique();
+                dm.HasIndex(dm => dm.TransactionDate);
             });
 
             #endregion -- Debit Memo --
@@ -565,6 +571,7 @@ namespace IBS.DataAccess.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
                 cm.HasIndex(cm => cm.CreditMemoNo).IsUnique();
+                cm.HasIndex(cm => cm.TransactionDate);
             });
 
             #endregion -- Credit Memo --
@@ -617,6 +624,7 @@ namespace IBS.DataAccess.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
                 rr.HasIndex(rr => rr.ReceivingReportNo).IsUnique();
+                rr.HasIndex(rr => rr.Date);
             });
 
             #endregion -- Receving Report --
@@ -636,6 +644,7 @@ namespace IBS.DataAccess.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
                 cv.HasIndex(cv => cv.CheckVoucherHeaderNo).IsUnique();
+                cv.HasIndex(cv => cv.Date);
             });
 
             #endregion -- Check Voucher --
@@ -674,6 +683,7 @@ namespace IBS.DataAccess.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
                 jv.HasIndex(jv => jv.JournalVoucherHeaderNo).IsUnique();
+                jv.HasIndex(jv => jv.Date);
             });
 
             #endregion -- Check Voucher --
@@ -729,6 +739,13 @@ namespace IBS.DataAccess.Data
                     .WithMany()
                     .HasForeignKey(gl => gl.AccountId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                gl.HasIndex(gl => gl.Reference);
+            });
+
+            builder.Entity<FilprideInventory>(inventory =>
+            {
+                inventory.HasIndex(item => item.Reference);
             });
 
             #endregion
