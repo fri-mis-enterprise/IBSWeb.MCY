@@ -66,6 +66,31 @@ namespace IBSWeb.Areas.Filpride.Controllers
             return $"{fileName}-{DateTimeHelper.GetCurrentPhilippineTime():yyyyMMddHHmmss}{extension}";
         }
 
+        private static void ValidateTaxAllocation(decimal ewt, decimal wvat, decimal cwtBalance,
+            decimal cwVatBalance, bool has2307, bool has2306)
+        {
+            if (ewt < 0m || wvat < 0m)
+            {
+                throw new ArgumentException("EWT and WVAT allocations cannot be negative.");
+            }
+
+            if ((ewt > 0m && ewt > cwtBalance) ||
+                (wvat > 0m && wvat > cwVatBalance))
+            {
+                throw new ArgumentException($"Tax allocation exceeds the selected invoice's remaining tax balance. CWT remaining: {cwtBalance:#,##0.0000}; CWVAT remaining: {cwVatBalance:#,##0.0000}.");
+            }
+
+            if (ewt > 0m && !has2307)
+            {
+                throw new ArgumentException("BIR 2307 is required for a positive CWT allocation.");
+            }
+
+            if (wvat > 0m && !has2306)
+            {
+                throw new ArgumentException("BIR 2306 is required for a positive CWVAT allocation.");
+            }
+        }
+
         private async Task ValidateSalesInvoiceTaxAllocationAsync(
             int salesInvoiceId,
             int customerId,
@@ -76,11 +101,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
             bool has2306,
             CancellationToken cancellationToken)
         {
-            if (ewt < 0m || wvat < 0m)
-            {
-                throw new ArgumentException("EWT and WVAT allocations cannot be negative.");
-            }
-
             var salesInvoice = await _unitOfWork.FilprideSalesInvoice
                 .GetAsync(si => si.SalesInvoiceId == salesInvoiceId, cancellationToken);
 
@@ -93,21 +113,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 .GetTaxBalanceAsync(salesInvoiceId, excludedCollectionReceiptId, cancellationToken)
                 ?? throw new ArgumentException("The selected sales invoice was not found.");
 
-            if ((ewt > 0m && ewt > taxBalance.CwtBalance) ||
-                (wvat > 0m && wvat > taxBalance.CwVatBalance))
-            {
-                throw new ArgumentException($"Tax allocation exceeds the selected invoice's remaining tax balance. CWT remaining: {taxBalance.CwtBalance:#,##0.0000}; CWVAT remaining: {taxBalance.CwVatBalance:#,##0.0000}.");
-            }
-
-            if (ewt > 0m && !has2307)
-            {
-                throw new ArgumentException("BIR 2307 is required for a positive CWT allocation.");
-            }
-
-            if (wvat > 0m && !has2306)
-            {
-                throw new ArgumentException("BIR 2306 is required for a positive CWVAT allocation.");
-            }
+            ValidateTaxAllocation(ewt, wvat, taxBalance.CwtBalance, taxBalance.CwVatBalance, has2307, has2306);
         }
 
         private async Task<List<FilprideSalesInvoice>> ValidateMultipleSalesInvoiceTaxAllocationsAsync(
@@ -150,17 +156,19 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 throw new ArgumentException("The selected sales invoices are invalid for this receipt.");
             }
 
+            var collectionDetails = await _unitOfWork.FilprideSalesInvoice
+                .GetCollectionDetailsAsync(salesInvoiceIds, excludedCollectionReceiptId, cancellationToken);
+            if (collectionDetails.Count != salesInvoiceIds.Length)
+            {
+                throw new ArgumentException("The selected sales invoices are invalid for this receipt.");
+            }
+
+            var collectionDetailsById = collectionDetails.ToDictionary(detail => detail.InvoiceId);
             for (var i = 0; i < salesInvoiceIds.Length; i++)
             {
-                await ValidateSalesInvoiceTaxAllocationAsync(
-                    salesInvoiceIds[i],
-                    customerId,
-                    ewtAmounts[i],
-                    wvatAmounts[i],
-                    excludedCollectionReceiptId,
-                    has2307,
-                    has2306,
-                    cancellationToken);
+                var details = collectionDetailsById[salesInvoiceIds[i]];
+                ValidateTaxAllocation(ewtAmounts[i], wvatAmounts[i], details.CwtBalance,
+                    details.CwVatBalance, has2307, has2306);
             }
 
             return salesInvoices;
@@ -169,11 +177,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
         private async Task RecalculateSalesInvoiceTaxBalancesAsync(IEnumerable<int> salesInvoiceIds,
             CancellationToken cancellationToken)
         {
-            foreach (var salesInvoiceId in salesInvoiceIds.Distinct())
-            {
-                await _unitOfWork.FilprideSalesInvoice
-                    .RecalculateTaxBalancesAsync(salesInvoiceId, cancellationToken);
-            }
+            await _unitOfWork.FilprideSalesInvoice
+                .RecalculateTaxBalancesAsync(salesInvoiceIds.Distinct().ToArray(), cancellationToken);
         }
 
         private async Task ValidateServiceInvoiceTaxAllocationAsync(
@@ -186,11 +191,6 @@ namespace IBSWeb.Areas.Filpride.Controllers
             bool has2306,
             CancellationToken cancellationToken)
         {
-            if (ewt < 0m || wvat < 0m)
-            {
-                throw new ArgumentException("EWT and WVAT allocations cannot be negative.");
-            }
-
             var serviceInvoice = await _unitOfWork.FilprideServiceInvoice
                 .GetAsync(sv => sv.ServiceInvoiceId == serviceInvoiceId, cancellationToken);
 
@@ -203,21 +203,7 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 .GetTaxBalanceAsync(serviceInvoiceId, excludedCollectionReceiptId, cancellationToken)
                 ?? throw new ArgumentException("The selected service invoice was not found.");
 
-            if ((ewt > 0m && ewt > taxBalance.CwtBalance) ||
-                (wvat > 0m && wvat > taxBalance.CwVatBalance))
-            {
-                throw new ArgumentException($"Tax allocation exceeds the selected invoice's remaining tax balance. CWT remaining: {taxBalance.CwtBalance:#,##0.0000}; CWVAT remaining: {taxBalance.CwVatBalance:#,##0.0000}.");
-            }
-
-            if (ewt > 0m && !has2307)
-            {
-                throw new ArgumentException("BIR 2307 is required for a positive CWT allocation.");
-            }
-
-            if (wvat > 0m && !has2306)
-            {
-                throw new ArgumentException("BIR 2306 is required for a positive CWVAT allocation.");
-            }
+            ValidateTaxAllocation(ewt, wvat, taxBalance.CwtBalance, taxBalance.CwVatBalance, has2307, has2306);
         }
 
         private async Task RecalculateServiceInvoiceTaxBalancesAsync(int? serviceInvoiceId,
@@ -233,10 +219,8 @@ namespace IBSWeb.Areas.Filpride.Controllers
         private async Task RecalculateMultipleServiceInvoiceTaxBalancesAsync(IEnumerable<int> serviceInvoiceIds,
             CancellationToken cancellationToken)
         {
-            foreach (var serviceInvoiceId in serviceInvoiceIds.Distinct())
-            {
-                await RecalculateServiceInvoiceTaxBalancesAsync(serviceInvoiceId, cancellationToken);
-            }
+            await _unitOfWork.FilprideServiceInvoice
+                .RecalculateTaxBalancesAsync(serviceInvoiceIds.Distinct().ToArray(), cancellationToken);
         }
 
         private async Task<List<FilprideServiceInvoice>> ValidateMultipleServiceInvoiceTaxAllocationsAsync(
@@ -272,19 +256,21 @@ namespace IBSWeb.Areas.Filpride.Controllers
                 throw new ArgumentException("Selected service invoices must use the same receipt series.");
             }
 
+            var collectionDetails = await _unitOfWork.FilprideServiceInvoice
+                .GetCollectionDetailsAsync(serviceInvoiceIds, excludedCollectionReceiptId, cancellationToken);
+            if (collectionDetails.Count != serviceInvoiceIds.Length)
+            {
+                throw new ArgumentException("The selected service invoices are invalid for this receipt.");
+            }
+
+            var collectionDetailsById = collectionDetails.ToDictionary(detail => detail.InvoiceId);
             for (var i = 0; i < serviceInvoiceIds.Length; i++)
             {
-                await ValidateServiceInvoiceTaxAllocationAsync(serviceInvoiceIds[i], customerId,
-                    ewtAmounts[i], wvatAmounts[i], excludedCollectionReceiptId, has2307, has2306,
-                    cancellationToken);
                 var invoice = invoices.Single(sv => sv.ServiceInvoiceId == serviceInvoiceIds[i]);
-                var oldAllocation = excludedCollectionReceiptId.HasValue
-                    ? await _dbContext.FilprideCollectionReceiptDetails
-                        .Where(detail => detail.CollectionReceiptId == excludedCollectionReceiptId.Value &&
-                                         detail.InvoiceNo == invoice.ServiceInvoiceNo)
-                        .SumAsync(detail => detail.Amount, cancellationToken)
-                    : 0m;
-                if (paymentAmounts[i] > invoice.Balance + oldAllocation)
+                var details = collectionDetailsById[serviceInvoiceIds[i]];
+                ValidateTaxAllocation(ewtAmounts[i], wvatAmounts[i], details.CwtBalance,
+                    details.CwVatBalance, has2307, has2306);
+                if (paymentAmounts[i] > details.Balance)
                 {
                     throw new ArgumentException($"Allocation exceeds the remaining balance of {invoice.ServiceInvoiceNo}.");
                 }
@@ -3420,104 +3406,38 @@ namespace IBSWeb.Areas.Filpride.Controllers
             }
         }
 
-        public async Task<IActionResult> MultipleInvoiceBalance(int siNo, int? collectionReceiptId, CancellationToken cancellationToken)
+        public async Task<IActionResult> MultipleInvoiceBalances(int[] siNos, int? collectionReceiptId, CancellationToken cancellationToken)
         {
             try
             {
-                var salesInvoice = await _unitOfWork.FilprideSalesInvoice
-                    .GetAsync(si => si.SalesInvoiceId == siNo, cancellationToken);
-
-                if (salesInvoice == null)
-                {
-                    return Json(null);
-                }
-
-                var amount = salesInvoice.Amount;
-                var receiptAmount = collectionReceiptId.HasValue
-                    ? await _dbContext.FilprideCollectionReceiptDetails
-                        .Where(detail => detail.CollectionReceiptId == collectionReceiptId.Value &&
-                                         detail.InvoiceNo == salesInvoice.SalesInvoiceNo)
-                        .SumAsync(detail => detail.Amount, cancellationToken)
-                    : 0m;
-                var amountPaid = salesInvoice.AmountPaid - receiptAmount;
-                var balance = salesInvoice.Balance + receiptAmount;
-                var adjustedGrossAmount = salesInvoice.Amount - salesInvoice.Discount + salesInvoice.DebitAmount - salesInvoice.CreditAmount;
-                var netOfVatAmount = (salesInvoice.CustomerOrderSlip?.VatType ?? salesInvoice.Customer?.VatType) == SD.VatType_Vatable
-                    ? DecimalRoundingHelper.ComputeNetOfVat(adjustedGrossAmount)
-                    : DecimalRoundingHelper.RoundToFour(adjustedGrossAmount);
-                var vatAmount = (salesInvoice.CustomerOrderSlip?.VatType ?? salesInvoice.Customer?.VatType) == SD.VatType_Vatable
-                    ? _unitOfWork.FilprideCollectionReceipt.ComputeVatAmount(netOfVatAmount)
-                    : 0m;
-                var taxBalance = await _unitOfWork.FilprideSalesInvoice
-                    .GetTaxBalanceAsync(salesInvoice.SalesInvoiceId, collectionReceiptId, cancellationToken)
-                    ?? throw new InvalidOperationException("Sales invoice tax balance not found.");
-
-                return Json(new
-                {
-                    Amount = amount,
-                    AmountPaid = amountPaid,
-                    NetAmount = netOfVatAmount,
-                    VatAmount = vatAmount,
-                    EwtAmount = taxBalance.CwtBalance,
-                    WvatAmount = taxBalance.CwVatBalance,
-                    CwtAmount = taxBalance.CwtAmount,
-                    CwVatAmount = taxBalance.CwVatAmount,
-                    CwtAmountPaid = taxBalance.CwtAmountPaid,
-                    CwVatAmountPaid = taxBalance.CwVatAmountPaid,
-                    CwtBalance = taxBalance.CwtBalance,
-                    CwVatBalance = taxBalance.CwVatBalance,
-                    Balance = balance,
-                    Debit = salesInvoice.DebitAmount,
-                    Credit = salesInvoice.CreditAmount
-                });
+                var details = await _unitOfWork.FilprideSalesInvoice
+                    .GetCollectionDetailsAsync(siNos, collectionReceiptId, cancellationToken);
+                return Json(details);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to get multiple invoice balance. Error: {ErrorMessage}, Stack: {StackTrace}.",
+                _logger.LogError(ex, "Failed to get multiple invoice balances. Error: {ErrorMessage}, Stack: {StackTrace}.",
                     ex.Message, ex.StackTrace);
-                return StatusCode(StatusCodes.Status500InternalServerError, "Unable to retrieve the invoice balance.");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Unable to retrieve the invoice balances.");
             }
         }
 
         [HttpGet]
-        public async Task<IActionResult> MultipleServiceInvoiceBalance(int siNo, int? collectionReceiptId,
+        public async Task<IActionResult> MultipleServiceInvoiceBalances(int[] siNos, int? collectionReceiptId,
             CancellationToken cancellationToken)
         {
-            var invoice = await _unitOfWork.FilprideServiceInvoice
-                .GetAsync(sv => sv.ServiceInvoiceId == siNo, cancellationToken);
-            if (invoice == null)
+            try
             {
-                return Json(null);
+                var details = await _unitOfWork.FilprideServiceInvoice
+                    .GetCollectionDetailsAsync(siNos, collectionReceiptId, cancellationToken);
+                return Json(details);
             }
-
-            var receiptAmount = collectionReceiptId.HasValue
-                ? await _dbContext.FilprideCollectionReceiptDetails
-                    .Where(detail => detail.CollectionReceiptId == collectionReceiptId.Value &&
-                                     detail.InvoiceNo == invoice.ServiceInvoiceNo)
-                    .SumAsync(detail => detail.Amount, cancellationToken)
-                : 0m;
-            var taxBalance = await _unitOfWork.FilprideServiceInvoice
-                .GetTaxBalanceAsync(invoice.ServiceInvoiceId, collectionReceiptId, cancellationToken);
-            if (taxBalance == null)
+            catch (Exception ex)
             {
-                return Json(null);
+                _logger.LogError(ex, "Failed to get multiple service invoice balances. Error: {ErrorMessage}, Stack: {StackTrace}.",
+                    ex.Message, ex.StackTrace);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Unable to retrieve the service invoice balances.");
             }
-
-            var adjustedGross = invoice.Total - invoice.Discount + invoice.DebitAmount - invoice.CreditAmount;
-            var netAmount = invoice.VatType == SD.VatType_Vatable
-                ? DecimalRoundingHelper.ComputeNetOfVat(adjustedGross)
-                : DecimalRoundingHelper.RoundToFour(adjustedGross);
-            return Json(new
-            {
-                Amount = invoice.Total,
-                NetAmount = netAmount,
-                AmountPaid = invoice.AmountPaid - receiptAmount,
-                Balance = invoice.Balance + receiptAmount,
-                CwtBalance = taxBalance.CwtBalance,
-                CwVatBalance = taxBalance.CwVatBalance,
-                Debit = invoice.DebitAmount,
-                Credit = invoice.CreditAmount
-            });
         }
 
         [Authorize(Policy = nameof(CollectionReceipt.CollectionReceiptMultipleCollectionPreview))]
