@@ -12,6 +12,12 @@ namespace IBS.DataAccess.Repository.Filpride.IRepository
             int? excludedCollectionReceiptId = null,
             CancellationToken cancellationToken = default);
 
+        Task<List<SalesInvoiceCollectionDetailsDto>> GetCollectionDetailsAsync(int[] salesInvoiceIds,
+            int? excludedCollectionReceiptId = null,
+            CancellationToken cancellationToken = default);
+
         Task RecalculateTaxBalancesAsync(int salesInvoiceId, CancellationToken cancellationToken = default);
+
+        Task RecalculateTaxBalancesAsync(int[] salesInvoiceIds, CancellationToken cancellationToken = default);
     }
 }
