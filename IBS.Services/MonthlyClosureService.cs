@@ -1,8 +1,10 @@
 using IBS.DataAccess.Data;
 using IBS.DataAccess.Repository.IRepository;
 using IBS.Models.Enums;
+using IBS.Models.Filpride.AccountsPayable;
 using IBS.Models.Filpride.Books;
 using IBS.Models.Filpride;
+using IBS.Models.Filpride.AccountsReceivable;
 using IBS.Utility.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,13 +26,17 @@ namespace IBS.Services
 
         private readonly IUnitOfWork _unitOfWork;
 
+        private readonly IServiceInvoiceGenerationService _serviceInvoiceGenerationService;
+
         public MonthlyClosureService(ApplicationDbContext dbContext,
             ILogger<MonthlyClosureService> logger,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IServiceInvoiceGenerationService serviceInvoiceGenerationService)
         {
             _dbContext = dbContext;
             _logger = logger;
             _unitOfWork = unitOfWork;
+            _serviceInvoiceGenerationService = serviceInvoiceGenerationService;
         }
 
         public async Task CloseAsync(DateOnly monthDate, string user, CancellationToken cancellationToken = default)
@@ -64,6 +70,12 @@ namespace IBS.Services
                 //await AutoReversalForCvWithoutDcrDate(monthDate, cancellationToken);
                 await ComputeNibit(monthDate, cancellationToken);
                 await RecordGlPeriodBalance(monthDate, cancellationToken);
+
+                var periodStart = new DateOnly(monthDate.Year, monthDate.Month, 1);
+                var nextPeriod = periodStart.AddMonths(1);
+                await ProcessAmortization(nextPeriod, cancellationToken);
+                await ProcessRecurringServiceInvoices(nextPeriod, cancellationToken);
+                await ReverseTheJvEntries(periodStart, cancellationToken);
 
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -502,6 +514,180 @@ namespace IBS.Services
             }
         }
 
+        private async Task ProcessAmortization(DateOnly nextPeriod, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var amortizationSetting = await _dbContext.JvAmortizationSettings
+                    .Include(x => x.JvHeader)
+                        .ThenInclude(x => x.Details)
+                    .Where(x =>
+                        (x.NextRunDate == null || x.NextRunDate <= nextPeriod) &&
+                        x.IsActive &&
+                        x.JvHeader.PostedBy != null &&
+                        x.JvHeader.Date < nextPeriod)
+                    .ToListAsync(cancellationToken);
+
+                if (amortizationSetting.Count == 0)
+                {
+                    return;
+                }
+
+                var newJournalVouchers = new List<FilprideJournalVoucherHeader>();
+
+                var groupedAmortizations = amortizationSetting
+                    .GroupBy(a => a.JvHeader.Type)
+                    .ToList();
+
+                foreach (var group in groupedAmortizations)
+                {
+                    var baseCode = await _unitOfWork.FilprideJournalVoucher
+                        .GenerateCodeAsync(group.Key, cancellationToken);
+
+                    var offset = 0;
+                    foreach (var amortization in group)
+                    {
+                        var sourceJv = amortization.JvHeader;
+
+                        if (sourceJv?.Details == null || sourceJv.Details.Count == 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"The source journal voucher for amortization with ID {amortization.JvId} is missing or has no details.");
+                        }
+
+                        var generatedCode = IncrementCode(baseCode, offset++);
+
+                        var newHeader = new FilprideJournalVoucherHeader
+                        {
+                            Type = sourceJv.Type,
+                            JournalVoucherHeaderNo = generatedCode,
+                            Date = nextPeriod,
+                            References = sourceJv.References,
+                            CVId = sourceJv.CVId,
+                            Particulars = sourceJv.Particulars,
+                            CRNo = sourceJv.CRNo,
+                            JVReason = sourceJv.JVReason,
+                            CreatedBy = "SYSTEM GENERATED",
+                            JvType = nameof(JvType.Amortization),
+                            Status = nameof(JvStatus.Pending),
+                            Details = sourceJv.Details.Select(detail => new FilprideJournalVoucherDetail
+                            {
+                                AccountNo = detail.AccountNo,
+                                AccountName = detail.AccountName,
+                                TransactionNo = detail.TransactionNo,
+                                Debit = detail.Debit,
+                                Credit = detail.Credit,
+                                SubAccountType = detail.SubAccountType,
+                                SubAccountId = detail.SubAccountId,
+                                SubAccountName = detail.SubAccountName
+                            }).ToList()
+                        };
+
+                        newJournalVouchers.Add(newHeader);
+                        amortization.LastRunDate = nextPeriod;
+                        if (amortization.OccurrenceRemaining > 0)
+                        {
+                            amortization.OccurrenceRemaining--;
+                        }
+                        amortization.IsActive = amortization.OccurrenceRemaining > 0;
+                        amortization.NextRunDate = amortization.IsActive ? nextPeriod.AddMonths(1) : null;
+                    }
+                }
+
+                await _dbContext.FilprideJournalVoucherHeaders.AddRangeAsync(newJournalVouchers, cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while processing amortization for {Date}", nextPeriod);
+                throw;
+            }
+        }
+
+        private static string IncrementCode(string baseCode, int offset)
+        {
+            if (baseCode.StartsWith("JVU"))
+            {
+                var numericPart = baseCode.Substring(3);
+                var incremented = long.Parse(numericPart) + offset;
+                return "JVU" + incremented.ToString("D9");
+            }
+            else
+            {
+                var numericPart = baseCode.Substring(2);
+                var incremented = long.Parse(numericPart) + offset;
+                return "JV" + incremented.ToString("D10");
+            }
+        }
+
+        private async Task ReverseTheJvEntries(DateOnly periodStart, CancellationToken cancellationToken)
+        {
+            var nextPeriod = periodStart.AddMonths(1);
+            var currentDateTime = DateTimeHelper.GetCurrentPhilippineTime();
+            var journalVouchers = await _dbContext.FilprideJournalVoucherHeaders
+                .Include(x => x.Details)
+                .Include(x => x.CheckVoucherHeader)
+                .Where(x => x.PostedBy != null && x.AutoReverseNextMonth
+                            && x.Date >= periodStart && x.Date < nextPeriod)
+                .ToListAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Journal voucher auto reverse next month not found.");
+
+            var accountTitlesDto = await _unitOfWork.FilprideJournalVoucher.GetListOfAccountTitleDto(cancellationToken);
+            var ledgers = new List<FilprideGeneralLedgerBook>();
+
+            foreach (var journalVoucherHeader in journalVouchers)
+            {
+                var reversalEntryStart = ledgers.Count;
+                var postedDate = new DateOnly(journalVoucherHeader.Date.Year, journalVoucherHeader.Date.Month, 1)
+                    .AddMonths(1);
+                foreach (var detail in journalVoucherHeader.Details!)
+                {
+                    var account = accountTitlesDto.Find(c => c.AccountNumber == detail.AccountNo)
+                                  ?? throw new ArgumentException($"Account title '{detail.AccountNo}' not found.");
+
+                    ledgers.Add(
+                        new FilprideGeneralLedgerBook
+                        {
+                            Date = postedDate,
+                            Reference = journalVoucherHeader.JournalVoucherHeaderNo!,
+                            Description = $"Reversal of {journalVoucherHeader.Particulars}",
+                            AccountId = account.AccountId,
+                            AccountNo = account.AccountNumber,
+                            AccountTitle = account.AccountName,
+                            Debit = detail.Credit,
+                            Credit = detail.Debit,
+                            CreatedBy = journalVoucherHeader.CreatedBy!,
+                            CreatedDate = currentDateTime,
+                            SubAccountType = detail.SubAccountType,
+                            SubAccountId = detail.SubAccountId,
+                            SubAccountName = detail.SubAccountName,
+                            ModuleType = nameof(ModuleType.Journal)
+                        }
+                    );
+                }
+
+                if (journalVoucherHeader.CheckVoucherHeader?.SupplierId != null)
+                {
+                    ledgers
+                        .Skip(reversalEntryStart)
+                        .SetCounterparty(
+                            CounterpartyType.Supplier,
+                            journalVoucherHeader.CheckVoucherHeader.SupplierId,
+                            journalVoucherHeader.CheckVoucherHeader.SupplierName
+                                ?? journalVoucherHeader.CheckVoucherHeader.Payee);
+                }
+
+                if (!_unitOfWork.FilprideJournalVoucher.IsJournalEntriesBalanced(ledgers))
+                {
+                    throw new ArgumentException("Debit and Credit is not equal, check your entries.");
+                }
+
+                journalVoucherHeader.AutoReverseNextMonth = false;
+            }
+            await _dbContext.FilprideGeneralLedgerBooks.AddRangeAsync(ledgers, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         public async Task OpenAsync(DateOnly monthDate, string user, CancellationToken cancellationToken = default)
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -543,6 +729,104 @@ namespace IBS.Services
                 _logger.LogError(ex, "An error occurred while opening the period {Period}", monthDate.ToString("MMM yyy"));
                 throw;
             }
+        }
+
+        private async Task ProcessRecurringServiceInvoices(DateOnly nextPeriod, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var recurringInvoices = await _dbContext.FilprideRecurringServiceInvoices
+                    .Where(invoice => invoice.IsActive &&
+                                      invoice.NextRunPeriod != null &&
+                                      invoice.NextRunPeriod <= nextPeriod)
+                    .OrderBy(invoice => invoice.NextRunPeriod)
+                    .ToListAsync(cancellationToken);
+
+                if (recurringInvoices.Count == 0)
+                {
+                    return;
+                }
+
+                var recurringInvoiceIds = recurringInvoices
+                    .Select(invoice => invoice.RecurringServiceInvoiceId)
+                    .ToList();
+                var generatedInvoicePeriods = (await _dbContext.FilprideServiceInvoices
+                        .Where(invoice => invoice.RecurringServiceInvoiceId.HasValue &&
+                                          recurringInvoiceIds.Contains(invoice.RecurringServiceInvoiceId.Value) &&
+                                          invoice.Period <= nextPeriod &&
+                                          invoice.Status != nameof(Status.Voided))
+                        .Select(invoice => new
+                        {
+                            invoice.RecurringServiceInvoiceId,
+                            invoice.Period
+                        })
+                        .ToListAsync(cancellationToken))
+                    .Select(invoice => (invoice.RecurringServiceInvoiceId!.Value, invoice.Period))
+                    .ToHashSet();
+
+                foreach (var recurringInvoice in recurringInvoices)
+                {
+                    while (recurringInvoice.IsActive &&
+                           recurringInvoice.NextRunPeriod != null &&
+                           recurringInvoice.NextRunPeriod <= nextPeriod)
+                    {
+                        var invoicePeriod = NormalizePeriod(recurringInvoice.NextRunPeriod.Value);
+
+                        if (generatedInvoicePeriods.Add((recurringInvoice.RecurringServiceInvoiceId, invoicePeriod)))
+                        {
+                            var generatedInvoice = await _serviceInvoiceGenerationService.CreateAsync(
+                                new ServiceInvoiceGenerationRequest
+                                {
+                                    Type = recurringInvoice.Type,
+                                    CustomerId = recurringInvoice.CustomerId,
+                                    ServiceId = recurringInvoice.ServiceId,
+                                    Period = invoicePeriod,
+                                    DueDate = GetPeriodEndDate(invoicePeriod),
+                                    Instructions = recurringInvoice.Instructions,
+                                    Total = recurringInvoice.AmountPerMonth,
+                                    Discount = 0,
+                                    CreatedBy = "SYSTEM GENERATED",
+                                    RecurringServiceInvoiceId = recurringInvoice.RecurringServiceInvoiceId
+                                }, cancellationToken);
+
+                            await _unitOfWork.FilprideAuditTrail.AddAsync(new FilprideAuditTrail("SYSTEM GENERATED",
+                                $"Generated service invoice# {generatedInvoice.ServiceInvoiceNo} from recurring setup# {recurringInvoice.RecurringServiceInvoiceId}",
+                                "Service Invoice"), cancellationToken);
+                        }
+
+                        recurringInvoice.GeneratedCount = Math.Max(recurringInvoice.GeneratedCount,
+                            GetSequenceNumber(recurringInvoice, invoicePeriod));
+                        recurringInvoice.IsActive = recurringInvoice.GeneratedCount < recurringInvoice.DurationInMonths;
+                        recurringInvoice.NextRunPeriod = recurringInvoice.IsActive
+                            ? recurringInvoice.StartPeriod.AddMonths(recurringInvoice.GeneratedCount)
+                            : null;
+                    }
+                }
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while processing recurring service invoices for {Period}", nextPeriod);
+                throw;
+            }
+        }
+
+        private static int GetSequenceNumber(FilprideRecurringServiceInvoice recurringInvoice,
+            DateOnly invoicePeriod)
+        {
+            return ((invoicePeriod.Year - recurringInvoice.StartPeriod.Year) * 12) +
+                   invoicePeriod.Month - recurringInvoice.StartPeriod.Month + 1;
+        }
+
+        private static DateOnly NormalizePeriod(DateOnly period)
+        {
+            return new DateOnly(period.Year, period.Month, 1);
+        }
+
+        private static DateOnly GetPeriodEndDate(DateOnly period)
+        {
+            return NormalizePeriod(period).AddMonths(1).AddDays(-1);
         }
     }
 }
